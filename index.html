@@ -95,7 +95,7 @@
         <!-- メイン表示領域（ビュー切り替え） -->
         <div class="flex-1 flex flex-col px-5 pb-6 relative justify-between overflow-hidden">
             
-            <!-- 【設定・APIキー入力画面】（Gemini API関連の仕組みを完全に削除） -->
+            <!-- 【設定・システム画面】 -->
             <div id="settingsPanel" class="hidden absolute inset-0 bg-slate-950/98 z-45 p-6 flex flex-col justify-between overflow-y-auto no-scrollbar">
                 <div class="space-y-4">
                     <div class="flex justify-between items-center mb-2 mt-4">
@@ -110,7 +110,7 @@
                     <div>
                         <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">スプレッドシート連携用 GAS URL</label>
                         <input id="webhookUrlInput" type="text" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-blue-500 text-white transition-all">
-                        <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">※セットアップしたGoogle Apps ScriptのウェブアプリURLを貼り付けると、119番発信時に自動でタイムスタンプと架電元情報が指定のスプレッドシートに記録されます。</p>
+                        <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">※119番発信時に自動でタイムスタンプと架電元情報が指定のスプレッドシートに記録されます。ソースコード内にあなたのデフォルトGASウェブアプリURLが組み込まれています。</p>
                     </div>
 
                     <div>
@@ -250,7 +250,7 @@
                     <p id="odaiText" class="text-slate-300 text-[11px] leading-relaxed">設定中...</p>
                 </div>
 
-                <!-- 補助テキスト入力欄 (マイク不調・静音用) -->
+                <!-- 補助テキスト入力欄 -->
                 <div class="flex gap-2 mb-4 bg-slate-900 p-1.5 rounded-xl border border-slate-800">
                     <input id="textChatInput" type="text" placeholder="声で話すか、ここに入力して送信..." class="flex-1 bg-transparent px-2.5 py-1 text-xs focus:outline-none text-white placeholder-slate-500" onkeydown="if(event.key === 'Enter') sendTextMessage()">
                     <button onclick="sendTextMessage()" class="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded-lg transition-colors">
@@ -309,28 +309,28 @@
                             <div id="chkEmergencyIcon" class="mt-0.5"><i data-lucide="circle-dashed" class="w-4 h-4 text-slate-600"></i></div>
                             <div>
                                 <h4 class="text-xs font-bold text-slate-200">火事・救急の明確な宣言</h4>
-                                <p class="text-[10px] text-slate-400">最初に「火事」または「救急」と明確に答えられましたか？</p>
+                                <p class="text-[10px] text-slate-400">最初に「火事」または「救急」と明確に答えられましたか?</p>
                             </div>
                         </div>
                         <div class="flex items-start gap-2.5">
                             <div id="chkLocationIcon" class="mt-0.5"><i data-lucide="circle-dashed" class="w-4 h-4 text-slate-600"></i></div>
                             <div>
                                 <h4 class="text-xs font-bold text-slate-200">住所・場所の伝達</h4>
-                                <p class="text-[10px] text-slate-400">市区町村名、地番、または目標物を伝えられましたか？</p>
+                                <p class="text-[10px] text-slate-400">市区町村名、地番、または目標物を伝えられましたか?</p>
                             </div>
                         </div>
                         <div class="flex items-start gap-2.5">
                             <div id="chkSituationIcon" class="mt-0.5"><i data-lucide="circle-dashed" class="w-4 h-4 text-slate-600"></i></div>
                             <div>
                                 <h4 class="text-xs font-bold text-slate-200">具体的な状況説明</h4>
-                                <p class="text-[10px] text-slate-400">「誰がどうした」「何が燃えている」などの様子を話せましたか？</p>
+                                <p class="text-[10px] text-slate-400">「誰がどうした」「何が燃えている」などの様子を話せましたか?</p>
                             </div>
                         </div>
                         <div class="flex items-start gap-2.5">
                             <div id="chkIdentityIcon" class="mt-0.5"><i data-lucide="circle-dashed" class="w-4 h-4 text-slate-600"></i></div>
                             <div>
                                 <h4 class="text-xs font-bold text-slate-200">氏名・連絡先の提示</h4>
-                                <p class="text-[10px] text-slate-400">ご自身の名前や連絡用の電話番号を答えられましたか？</p>
+                                <p class="text-[10px] text-slate-400">ご自身の名前や連絡用の電話番号を答えられましたか?</p>
                             </div>
                         </div>
                     </div>
@@ -416,15 +416,15 @@
         let selectedScenario = "random";
         let aiVoice = "male"; // "male" or "female"
         
-        // 外部送信先URL
-        let webhookUrl = "";
+        // 【デフォルトGAS URLの埋め込み完了】
+        let webhookUrl = "https://script.google.com/macros/s/AKfycbz5Y24dwfsaq9S9WbfaRERDe6RQAn0YXqXJvL3zTbcf2QS_4LkOfLtgf7cUp933s8oceQ/exec";
         
         // 音声認識（STT）用
         let recognition = null;
         let isRecognizing = false;
         let isAiSpeaking = false; 
         
-        // 対話コンテキスト
+        // 对話コンテキスト
         let conversationHistory = [];
 
         // 訓練お題のテキスト記録用
@@ -448,12 +448,12 @@
 
             initSpeechRecognition();
 
-            // ローカルストレージ復元
+            // ローカルストレージに手動保存された別のURLがある場合はそちらを優先、なければデフォルト
             const savedWebhook = localStorage.getItem('webhook_url_119');
             if (savedWebhook) {
                 webhookUrl = savedWebhook;
-                document.getElementById('webhookUrlInput').value = savedWebhook;
             }
+            document.getElementById('webhookUrlInput').value = webhookUrl;
         });
 
         // --- 時計表示 ---
@@ -534,7 +534,7 @@
             selectedScenario = document.getElementById('scenarioSelect').value;
             aiVoice = document.getElementById('voiceSelect').value;
             
-            showToast("接続・データ設定を保存しました");
+            showToast("データ設定を保存しました");
             toggleSettings();
         }
 
@@ -633,7 +633,7 @@
                 `;
 
                 startSpeechListening();
-                document.getElementById('aiStatusText').textContent = "指令課員に応答要請中...";
+                document.getElementById('aiStatusText').textContent = "指令員に応答要請中...";
 
                 let resolved = selectedScenario;
                 if (resolved === "random") {
@@ -682,15 +682,15 @@
                     caller: activeCallerInfo || "訓練生 (匿名発信)"
                 };
 
+                // CORSプリフライト制限を完全にバイパスし、GASに確実にデータを送るために「no-cors」モードで送信
                 await fetch(webhookUrl, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload),
-                    mode: "cors"
+                    mode: "no-cors"
                 });
-                console.log("Auto-logging success.");
+                console.log("Auto-logging dispatched successfully.");
             } catch (err) {
-                console.warn("Auto-log dispatched.", err);
+                console.warn("Auto-log dispatched with response omission:", err);
             }
         }
 
