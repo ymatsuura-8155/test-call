@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>02_119番 通報訓練シミュレーター</title>
+    <title>03_119番 通報訓練シミュレーター</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
@@ -430,9 +430,17 @@
         // 訓練お題のテキスト記録用
         let activeScenarioTitle = "";
         
-        // 【新規：リアルタイムに聞き取り検出した名前と連絡先】
+        // 【リアルタイムに聞き取り検出した名前と連絡先】
         let detectedCallerName = "";
         let detectedCallerPhone = "";
+
+        // 【会話の進行フェーズ管理】
+        // 0: 開始（火事救急の選択）
+        // 1: 場所の聞き取り
+        // 2: 状況の聞き取り
+        // 3: 氏名・連絡先の聞き取り
+        // 4: 終了
+        let currentPhase = 0;
 
         // 判定キーワード用 (訓練レポート用スコアリング)
         let spokenKeywords = {
@@ -616,9 +624,10 @@
 
             spokenKeywords = { emergency: false, location: false, situation: false, identity: false };
             
-            // 聞き取り用検出変数の初期化
+            // 状態と検出パラメータの初期化
             detectedCallerName = "";
             detectedCallerPhone = "";
+            currentPhase = 0; // フェーズをゼロにリセット
 
             setTimeout(() => {
                 document.getElementById('dialView').classList.add('hidden');
@@ -672,11 +681,11 @@
             }, 1000);
         }
 
-        // --- 【改良：通話終了時に、聞き取れた名前を含めてスプレッドシートへ自動送信する処理】 ---
+        // --- 通話終了時にお手持ちのスプレッドシートへ自動送信する処理 ---
         async function logCallEndToSpreadsheet() {
             if (!webhookUrl) return;
             
-            // 実際に通話中から聞き取ることに成功した情報を編集して架電元情報を作成
+            // 聞き取りに成功した情報を編集して架電元情報を作成
             let finalCallerInfo = "";
             
             if (detectedCallerName) {
@@ -691,7 +700,6 @@
                 finalCallerInfo += " (電話番号未確認)";
             }
 
-            // 何も聞き取れなかった場合のフォールバック
             if (!detectedCallerName && !detectedCallerPhone) {
                 finalCallerInfo = "聞き取り失敗 (匿名発信)";
             }
@@ -702,7 +710,7 @@
                     caller: finalCallerInfo
                 };
 
-                // CORS制限を完全にバイパスしてGASに確実に記録するために no-cors を採用
+                // CORS制限を完全にバイパスして確実に記録するために no-cors モードを採用
                 await fetch(webhookUrl, {
                     method: "POST",
                     body: JSON.stringify(payload),
@@ -802,7 +810,7 @@
             }, 1000);
         }
 
-        // 【改良：発話テキストの中から名前や電話番号を特定・スキャンするリアルタイム検出ロジック】
+        // 発話テキストの中から名前や電話番号を特定・スキャンするリアルタイム検出ロジック
         function evaluateKeywordsInRealtime(text) {
             if (text.includes("火事") || text.includes("火災") || text.includes("救急") || text.includes("きゅうきゅう") || text.includes("けが") || text.includes("倒れ")) {
                 spokenKeywords.emergency = true;
@@ -829,7 +837,7 @@
                 detectedCallerName = "鈴木";
             }
 
-            // 電話番号の聞き取り判定（発話内に対応するプレフィックスや部分数値を検知した場合）
+            // 電話番号の聞き取り判定
             if (text.includes("090") || text.includes("080") || text.includes("070") || text.includes("0985") || text.includes("ぜろきゅうぜろ") || text.includes("ぜろはちぜろ") || text.includes("ぜろきゅうはちご") || text.includes("番号") || text.includes("1234") || text.includes("9876") || text.includes("2233") || text.includes("1111")) {
                 if (activeScenarioTitle.includes("パターンA")) {
                     detectedCallerPhone = "090-1234-5678";
@@ -897,28 +905,41 @@
             }
         }
 
-        // --- ローカル擬似対話フロー ---
+        // --- 【改良：状態管理（State Machine）による一本道の確実なローカル擬似対話フロー】 ---
         function simulateOfflineCall(userText) {
-            let responseText = "はい、１１９番消防本部です。火事ですか、救急ですか？";
-            const turns = conversationHistory.filter(h => h.role === "user").length;
+            let responseText = "";
 
-            if (turns <= 1) {
+            // 初回のサイレントトリガー（発信直後）
+            if (userText === "（119番通報を発信しました）") {
+                currentPhase = 0;
                 responseText = "はい、１１９番消防本部です。火事ですか、救急ですか？";
-            } else if (userText.includes("火事") || userText.includes("火が") || userText.includes("煙") || userText.includes("救急") || userText.includes("倒れ") || userText.includes("ケガ")) {
+                fallbackLocalTTS(responseText);
+                return;
+            }
+
+            // フェーズ状態にのみ基づいて、一歩ずつ進む
+            if (currentPhase === 0) {
+                // 「火事ですか救急ですか」に対して何か答えたら、場所フェーズへ
+                currentPhase = 1;
                 responseText = "分かりました。場所はどちらですか？市区町村名から教えてください。";
-            } else if (userText.includes("市") || userText.includes("町") || userText.includes("丁目") || userText.includes("駅") || userText.includes("ビル") || userText.includes("アパート")) {
+            } else if (currentPhase === 1) {
+                // 「場所」を何か答えたら、状況フェーズへ
+                currentPhase = 2;
                 responseText = "場所を確認しました。何があったか、詳しい状況を教えてください。";
-            } else if (userText.includes("意識") || userText.includes("燃え") || textContainsCondition(userText)) {
-                responseText = "状況を把握しました。お名前と、今使っているお電話番号を教えてください。";
+            } else if (currentPhase === 2) {
+                // 「状況」を何か答えたら、お名前・連絡先フェーズへ
+                currentPhase = 3;
+                responseText = "状況を把握しました。最後に、あなたのお名前と、今使っているお電話番号を教えてください。";
+            } else if (currentPhase === 3) {
+                // 「名前・連絡先」を何か答えたら、通話終了へ
+                currentPhase = 4;
+                responseText = "ありがとうございます。救急隊と消防隊をそちらに向かわせます。安全な場所でお待ちください。それでは失礼します。";
             } else {
-                responseText = "なるほど、詳細を教えていただきありがとうございます。救急隊、または消防隊を直ちに現場へ向かわせます。安全な場所でお待ちください。お電話を切りますね。";
+                // 万が一以降の発話があった場合
+                responseText = "救急隊が向かっていますので、そのままお待ちくださいね。電話を切ります。";
             }
 
             fallbackLocalTTS(responseText);
-        }
-
-        function textContainsCondition(text) {
-            return text.includes("落ち") || text.includes("血") || text.includes("火災") || text.includes("階段") || text.includes("倒れ");
         }
 
         function appendChatBubble(role, text) {
@@ -964,7 +985,7 @@
             }
             updateWavebars(false);
 
-            // 【改良：通話が終了した瞬間に、実際に聞き取れた情報をスプレッドシートに記録する】
+            // 通話が終了した瞬間に、実際に聞き取れた情報をスプレッドシートに記録する
             logCallEndToSpreadsheet();
 
             renderEvaluationReport();
