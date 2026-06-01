@@ -95,12 +95,12 @@
         <!-- メイン表示領域（ビュー切り替え） -->
         <div class="flex-1 flex flex-col px-5 pb-6 relative justify-between overflow-hidden">
             
-            <!-- 【設定・APIキー入力画面】 -->
+            <!-- 【設定・APIキー入力画面】（Gemini API関連の仕組みを完全に削除） -->
             <div id="settingsPanel" class="hidden absolute inset-0 bg-slate-950/98 z-45 p-6 flex flex-col justify-between overflow-y-auto no-scrollbar">
                 <div class="space-y-4">
                     <div class="flex justify-between items-center mb-2 mt-4">
                         <h3 class="text-lg font-bold flex items-center gap-2 text-rose-400">
-                            <i data-lucide="sliders" class="w-5 h-5"></i> 接続・データ設定
+                            <i data-lucide="sliders" class="w-5 h-5"></i> システム・データ設定
                         </h3>
                         <button onclick="toggleSettings()" class="text-slate-400 hover:text-white p-1 rounded-full hover:bg-slate-900">
                             <i data-lucide="x" class="w-6 h-6"></i>
@@ -108,15 +108,9 @@
                     </div>
 
                     <div>
-                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Gemini API Key</label>
-                        <input id="apiKeyInput" type="password" placeholder="AI StudioのAPIキーを入力..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-rose-500 text-white transition-all">
-                        <p class="text-[10px] text-slate-500 mt-1">※未入力の場合は「オフライン音声合成」で動作します。</p>
-                    </div>
-
-                    <div>
-                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">データ送信先URL (GAS / Webhook)</label>
-                        <input id="webhookUrlInput" type="text" placeholder="https://script.google.com/... 又はWebhook URL" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-blue-500 text-white transition-all">
-                        <p class="text-[10px] text-slate-500 mt-1">※Google Apps Script (スプレッドシート) またはDiscord/Slack等のWebhook URLを指定すると、訓練結果を蓄積できます。</p>
+                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">スプレッドシート連携用 GAS URL</label>
+                        <input id="webhookUrlInput" type="text" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-blue-500 text-white transition-all">
+                        <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">※セットアップしたGoogle Apps ScriptのウェブアプリURLを貼り付けると、119番発信時に自動でタイムスタンプと架電元情報が指定のスプレッドシートに記録されます。</p>
                     </div>
 
                     <div>
@@ -131,12 +125,10 @@
                     </div>
 
                     <div>
-                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">指令員の声（AIの音声）</label>
+                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">指令員の声のタイプ</label>
                         <select id="voiceSelect" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-rose-500 text-white transition-all">
-                            <option value="Fenrir" selected>Fenrir (男性・落ち着いた響き - 推奨)</option>
-                            <option value="Puck">Puck (男性・少し若々しい声)</option>
-                            <option value="Kore">Kore (女性・明瞭でハキハキした声)</option>
-                            <option value="Zephyr">Zephyr (女性・優しく穏やかな声)</option>
+                            <option value="male" selected>男性指令員（落ち着いた低い声）</option>
+                            <option value="female">女性指令員（ハキハキした高い声）</option>
                         </select>
                     </div>
                 </div>
@@ -354,21 +346,18 @@
                     </p>
                 </div>
 
-                <!-- データ送信・外部蓄積オプション -->
-                <div id="dataExportSection" class="bg-slate-900 p-3 rounded-2xl border border-slate-800 mb-4 flex flex-col gap-2">
-                    <div class="flex justify-between items-center">
-                        <span class="text-[10px] font-bold text-slate-400 tracking-wider flex items-center gap-1">
-                            <i data-lucide="cloud-lightning" class="w-3.5 h-3.5 text-blue-400"></i> 外部データ蓄積
-                        </span>
-                        <span id="exportStatus" class="text-[9px] text-slate-500">送信未実行</span>
-                    </div>
-                    <button id="exportButton" onclick="sendDataToWebhook()" class="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-semibold py-2 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5">
-                        <i data-lucide="upload-cloud" class="w-4 h-4"></i> スプレッドシート / チャットへ記録する
-                    </button>
+                <!-- 自動送信ログステータス表示 -->
+                <div class="bg-slate-900 p-3.5 rounded-2xl border border-slate-800 mb-4 flex justify-between items-center text-xs">
+                    <span class="font-semibold text-slate-400 flex items-center gap-1.5">
+                        <i data-lucide="database" class="w-4 h-4 text-emerald-400"></i> スプレッドシート自動保存
+                    </span>
+                    <span id="autoLogStatus" class="font-bold text-[11px] text-slate-500">
+                        未接続
+                    </span>
                 </div>
 
                 <!-- アクションボタン -->
-                <button onclick="backToDialView()" class="w-full bg-slate-900 hover:bg-slate-850 text-white font-semibold py-3 rounded-xl transition-all border border-slate-800 flex items-center justify-center gap-1 text-xs">
+                <button onclick="backToDialView()" class="w-full bg-slate-900 hover:bg-slate-855 text-white font-semibold py-3 rounded-xl transition-all border border-slate-800 flex items-center justify-center gap-1 text-xs">
                     <i data-lucide="rotate-ccw" class="w-4 h-4"></i> キーパッドに戻って再挑戦
                 </button>
             </div>
@@ -425,13 +414,10 @@
         let callTimerInterval = null;
         let isMuted = false;
         let selectedScenario = "random";
-        let aiVoice = "Fenrir"; 
+        let aiVoice = "male"; // "male" or "female"
         
         // 外部送信先URL
         let webhookUrl = "";
-        
-        // Gemini APIの設定
-        const apiKey = ""; 
         
         // 音声認識（STT）用
         let recognition = null;
@@ -440,10 +426,10 @@
         
         // 対話コンテキスト
         let conversationHistory = [];
-        let systemPrompt = "";
 
         // 訓練お題のテキスト記録用
         let activeScenarioTitle = "";
+        let activeCallerInfo = ""; // 119番通報の架電元情報用
 
         // 判定キーワード用 (訓練レポート用スコアリング)
         let spokenKeywords = {
@@ -462,32 +448,7 @@
 
             initSpeechRecognition();
 
-            systemPrompt = `あなたは消防本部の優秀な「指令課員（電話の受話者）」です。ユーザーは助けを求める「一般の通報者（市民）」であり、119番の模擬通報訓練を行っています。
-
-# 最重要・出力ルール
-1. 音声読み上げソフト（TTS）に流すためのテキストです。出力はすべて「実際にあなたが口頭で話す自然な日本語のセリフ」だけにしてください。
-2. 箇条書き、アスタリスク（*）、太字、スラッシュ（/）、カッコ（）などの記号やマークダウン装飾は【絶対に】一切含めないでください。すべて平易な話し言葉のテキストにします。
-3. 読み間違いを防ぐため、数字やアルファベットは極力自然な日本語読みが通る平仮名または漢字表現にしてください（例：「119番」は「ひゃくじゅうきゅうばん」、「090」は「ぜろきゅうぜろ」）。
-
-# 指令課員の対応フロー
-あなたが119番の接続を感知したら、第一声として落ち着いた声で、以下のように応答してください。
-「はい、１１９番消防本部です。火事ですか、救急ですか？」
-
-その後、市民（ユーザー）の焦りや返答に合わせて、以下の項目を【一つずつ】優しく聞き出してください。一問一答を意識してください。
-1. 火事なのか救急（急病や怪我）なのかの確定
-2. 発生している「詳しい場所（住所や目印になるビル等）」の確認
-3. 現状の「詳しい状況（誰がどうしているか、何が燃えているか）」の把握
-4. 通報者自身の「お名前」と「今おかけの電話番号」の確認
-
-# 通話の終了
-すべての情報が聞き出せたら、以下のように案内して、優しく通話を切り上げてください。
-「よく分かりました。ただちに消防車と救急車をそちらに向かわせます。あなたは安全な場所に避難して待っていてください。それでは電話を切りますね。お大事にしてください。」`;
-
             // ローカルストレージ復元
-            const savedKey = localStorage.getItem('gemini_api_key_119');
-            if (savedKey) {
-                document.getElementById('apiKeyInput').value = savedKey;
-            }
             const savedWebhook = localStorage.getItem('webhook_url_119');
             if (savedWebhook) {
                 webhookUrl = savedWebhook;
@@ -566,9 +527,6 @@
         }
 
         function saveSettings() {
-            const val = document.getElementById('apiKeyInput').value.trim();
-            localStorage.setItem('gemini_api_key_119', val);
-            
             const webVal = document.getElementById('webhookUrlInput').value.trim();
             webhookUrl = webVal;
             localStorage.setItem('webhook_url_119', webVal);
@@ -684,37 +642,56 @@
                 }
 
                 let odaiText = "";
-                let scenarioContext = "";
                 if (resolved === "A") {
                     activeScenarioTitle = "パターンA (救急・同僚意識不明)";
+                    activeCallerInfo = "松浦 (090-1234-5678)";
                     odaiText = "【救急】同僚が急に目の前で倒れて意識がありません。場所は「宮崎市橘通東2丁目 消防会館ビルの3階」。あなたの名前は「松浦」、携帯は「090-1234-5678」。冷静に対処してください。";
-                    scenarioContext = "ユーザーは「倒れた同僚の救急要請」をしようとしています。場所は「宮崎市橘通東2丁目 消防会館ビル3階」、自身の名前は「松浦」、連絡先は「090-1234-5678」です。";
                 } else if (resolved === "B") {
                     activeScenarioTitle = "パターンB (火事・ゴミ箱火災)";
+                    activeCallerInfo = "田中 (080-9876-5432)";
                     odaiText = "【火事】近くの公園のゴミ箱から勢いよく火が出ています。場所は「宮崎市高千穂通1丁目 市民プラザ向かいの公園」。名前は「田中」、携帯は「080-9876-5432」。焦った様子で通報してみましょう。";
-                    scenarioContext = "ユーザーは「公園のゴミ箱の火災通報」をしようとしています。場所は「宮崎市高千穂通1丁目 市民プラザの向かい」、名前は「田中」、連絡先は「080-9876-5432」です。";
                 } else if (resolved === "C") {
                     activeScenarioTitle = "パターンC (救急・子供転落事故)";
+                    activeCallerInfo = "佐藤 (0985-11-2233)";
                     odaiText = "【救急】子供が自宅の階段から足を踏み外して落ち、頭を打って泣いています。場所は「宮崎市大字宮崎の自宅アパート」。あなたの名前は「佐藤」、固定電話「0985-11-2233」。不安な気持ちで助けを求めてください。";
-                    scenarioContext = "ユーザーは「子供の階段からの転落事故」を想定しています。場所は「宮崎市大字宮崎の自宅」、通報者は「佐藤」、連絡先は「0985-11-2233」です。";
                 } else if (resolved === "D") {
                     activeScenarioTitle = "パターンD (火事・アパート火災)";
+                    activeCallerInfo = "鈴木 (090-0000-1111)";
                     odaiText = "【火事】アパートの2階から黒煙と炎が吹き出しており、自分は外へ非難中。場所は「宮崎駅東3丁目 昭和荘の201号室」。名前は「鈴木」、携帯は「090-0000-1111」です。緊急避難を行いながら答えてください。";
-                    scenarioContext = "ユーザーは「アパート2階の建物火災」を想定しています。場所は「宮崎駅東3丁目 昭和荘201号室」、通報者は「鈴木」、連絡先は「090-0000-1111」です。";
                 }
 
                 document.getElementById('odaiText').textContent = odaiText;
 
-                conversationHistory.push({
-                    role: "system",
-                    content: systemPrompt + "\n\n【今回の市民（ユーザー）の想定状況設定】\n" + scenarioContext
-                });
+                // スプレッドシート（GAS）に自動ログ記録をPOSTする
+                autoLogCallStartToSpreadsheet();
 
                 setTimeout(() => {
                     handleUserResponse("（119番通報を発信しました）", true);
                 }, 1500);
 
             }, 1000);
+        }
+
+        // --- スプレッドシート（GAS）自動ログ記録 ---
+        async function autoLogCallStartToSpreadsheet() {
+            if (!webhookUrl) return;
+            
+            try {
+                const payload = {
+                    timestamp: new Date().toLocaleString("ja-JP"),
+                    caller: activeCallerInfo || "訓練生 (匿名発信)"
+                };
+
+                await fetch(webhookUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                    mode: "cors"
+                });
+                console.log("Auto-logging success.");
+            } catch (err) {
+                console.warn("Auto-log dispatched.", err);
+            }
         }
 
         function startSpeechListening() {
@@ -785,6 +762,7 @@
             handleUserResponse(text);
         }
 
+        // --- ユーザーの発話/テキスト受信（完全にローカル動作） ---
         async function handleUserResponse(userText, isSilentTrigger = false) {
             if (!isSilentTrigger) {
                 appendChatBubble("user", userText);
@@ -794,23 +772,14 @@
             document.getElementById('aiStatusText').textContent = "指令員が応答を考えています...";
             conversationHistory.push({ role: "user", content: userText });
 
-            const keyToUse = apiKey || document.getElementById('apiKeyInput').value.trim();
-
-            if (keyToUse) {
-                isAiSpeaking = true;
-                stopSpeechListening();
-                updateWavebars(false);
-                
-                await requestGeminiSpeech(keyToUse);
-            } else {
-                isAiSpeaking = true;
-                stopSpeechListening();
-                updateWavebars(false);
-                
-                setTimeout(() => {
-                    simulateOfflineCall(userText);
-                }, 1000);
-            }
+            isAiSpeaking = true;
+            stopSpeechListening();
+            updateWavebars(false);
+            
+            // 完全にローカルの音声合成・擬似会話ロジックへ
+            setTimeout(() => {
+                simulateOfflineCall(userText);
+            }, 1000);
         }
 
         function evaluateKeywordsInRealtime(text) {
@@ -828,92 +797,7 @@
             }
         }
 
-        async function requestGeminiSpeech(activeKey) {
-            const maxRetries = 5;
-            let attempt = 0;
-            
-            while (attempt < maxRetries) {
-                try {
-                    const geminiContents = conversationHistory.filter(h => h.role !== "system").map(h => ({
-                        role: h.role === "user" ? "user" : "model",
-                        parts: [{ text: h.content }]
-                    }));
-
-                    const systemText = conversationHistory.find(h => h.role === "system")?.content || systemPrompt;
-
-                    const ttsUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${activeKey}`;
-                    const ttsPayload = {
-                        contents: geminiContents,
-                        systemInstruction: {
-                            parts: [{ text: systemText }]
-                        },
-                        generationConfig: {
-                            responseModalities: ["AUDIO"],
-                            speechConfig: {
-                                voiceConfig: {
-                                    prebuiltVoiceConfig: {
-                                        voiceName: aiVoice
-                                    }
-                                }
-                            }
-                        }
-                    };
-
-                    const response = await fetch(ttsUrl, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(ttsPayload)
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`HTTP Error: ${response.status}`);
-                    }
-
-                    const result = await response.json();
-                    
-                    const inlineData = result.candidates?.[0]?.content?.parts?.[0]?.inlineData;
-                    const textResponse = result.candidates?.[0]?.content?.parts?.find(p => p.text)?.text || "はい、消防本部です。落ち着いて話してください。";
-
-                    if (inlineData && inlineData.data) {
-                        const base64Data = inlineData.data;
-                        const mimeType = inlineData.mimeType || "audio/L16;rate=24000";
-                        
-                        let sampleRate = 24000;
-                        const match = mimeType.match(/rate=(\d+)/);
-                        if (match) {
-                            sampleRate = parseInt(match[1]);
-                        }
-
-                        const pcmBytes = base64ToArrayBuffer(base64Data);
-                        const wavBuffer = pcmToWav(pcmBytes, sampleRate);
-                        
-                        appendChatBubble("ai", textResponse);
-                        conversationHistory.push({ role: "model", content: textResponse });
-                        document.getElementById('aiStatusText').textContent = "あなたの発話を待っています...";
-                        
-                        playAudioWav(wavBuffer, () => {
-                            isAiSpeaking = false;
-                            startSpeechListening();
-                        });
-                        return; 
-                    } else {
-                        fallbackLocalTTS(textResponse);
-                        return;
-                    }
-
-                } catch (err) {
-                    attempt++;
-                    const delay = Math.pow(2, attempt) * 1000;
-                    if (attempt >= maxRetries) {
-                        console.error("Gemini API Error:", err);
-                        fallbackLocalTTS("消防本部への接続状況が不安定です。お手数ですが、設定画面でAPIキーを確認するか、オフライン模擬に切り替えてください。");
-                        return;
-                    }
-                    await new Promise(res => setTimeout(res, delay));
-                }
-            }
-        }
-
+        // --- ブラウザ標準のローカル音声合成（TTS） ---
         function fallbackLocalTTS(text) {
             appendChatBubble("ai", text);
             conversationHistory.push({ role: "model", content: text });
@@ -926,9 +810,16 @@
                 utter.lang = 'ja-JP';
                 utter.rate = 1.05;
                 
+                // 男性または女性に聞こえるようにピッチとボイスを切り替える
+                if (aiVoice === "female") {
+                    utter.pitch = 1.25; // 高めのピッチ（女性風）
+                } else {
+                    utter.pitch = 0.85; // 低めのピッチ（男性風）
+                }
+                
                 const voices = synth.getVoices();
                 let chosenVoice = null;
-                if (aiVoice === "Kore" || aiVoice === "Zephyr") {
+                if (aiVoice === "female") {
                     chosenVoice = voices.find(v => v.lang === 'ja-JP' && (v.name.includes('Haruka') || v.name.includes('Kyoko') || v.name.includes('Google 日本語')));
                 } else {
                     chosenVoice = voices.find(v => v.lang === 'ja-JP' && (v.name.includes('Otoya') || v.name.includes('Ichiro') || v.name.includes('Male')));
@@ -960,6 +851,7 @@
             }
         }
 
+        // --- ローカル擬似対話フロー ---
         function simulateOfflineCall(userText) {
             let responseText = "はい、１１９番消防本部です。火事ですか、救急ですか？";
             const turns = conversationHistory.filter(h => h.role === "user").length;
@@ -981,72 +873,6 @@
 
         function textContainsCondition(text) {
             return text.includes("落ち") || text.includes("血") || text.includes("火災") || text.includes("階段") || text.includes("倒れ");
-        }
-
-        function base64ToArrayBuffer(base64) {
-            const binaryString = window.atob(base64);
-            const len = binaryString.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
-            }
-            return bytes.buffer;
-        }
-
-        function pcmToWav(pcmBuffer, sampleRate) {
-            const pcmData = new Int16Array(pcmBuffer);
-            const wavHeader = new ArrayBuffer(44);
-            const view = new DataView(wavHeader);
-
-            view.setUint32(0, 0x52494646, false);
-            view.setUint32(4, 36 + pcmData.length * 2, true);
-            view.setUint32(8, 0x57415645, false);
-            view.setUint32(12, 0x666d7420, false);
-            view.setUint32(16, 16, true);
-            view.setUint16(20, 1, true); 
-            view.setUint16(22, 1, true); 
-            view.setUint32(24, sampleRate, true);
-            view.setUint32(28, sampleRate * 2, true);
-            view.setUint16(32, 2, true);
-            view.setUint16(34, 16, true);
-            view.setUint32(36, 0x64617461, false);
-            view.setUint32(40, pcmData.length * 2, true);
-
-            const completeWav = new Uint8Array(wavHeader.byteLength + pcmData.byteLength);
-            completeWav.set(new Uint8Array(wavHeader), 0);
-            completeWav.set(new Uint8Array(pcmBuffer), wavHeader.byteLength);
-
-            return completeWav.buffer;
-        }
-
-        let currentAudioSource = null;
-        function playAudioWav(wavBuffer, onEndedCallback) {
-            try {
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                audioCtx.decodeAudioData(wavBuffer, (buffer) => {
-                    if (currentAudioSource) {
-                        try { currentAudioSource.stop(); } catch(e) {}
-                    }
-                    const source = audioCtx.createBufferSource();
-                    source.buffer = buffer;
-                    source.connect(audioCtx.destination);
-                    
-                    updateWavebars(true);
-                    
-                    source.onended = () => {
-                        updateWavebars(false);
-                        if (onEndedCallback) onEndedCallback();
-                    };
-                    source.start(0);
-                    currentAudioSource = source;
-                }, (err) => {
-                    console.error("Audio Decode Error:", err);
-                    if (onEndedCallback) onEndedCallback();
-                });
-            } catch (err) {
-                console.error("Audio play fail:", err);
-                if (onEndedCallback) onEndedCallback();
-            }
         }
 
         function appendChatBubble(role, text) {
@@ -1088,9 +914,6 @@
             stopSpeechListening();
             if (window.speechSynthesis) {
                 window.speechSynthesis.cancel();
-            }
-            if (currentAudioSource) {
-                try { currentAudioSource.stop(); } catch(e) {}
             }
             updateWavebars(false);
 
@@ -1143,106 +966,14 @@
                     "訓練お疲れ様でした。緊急通報はとても緊張しますね。手引きボタンや、画面に表示されるカンペをよく読みながら、落ち着いて指令員に答える練習を重ねてみましょう。";
             }
 
-            // 送信ボタンの状態をリセット
-            const exportBtn = document.getElementById('exportButton');
-            exportBtn.disabled = !webhookUrl;
-            document.getElementById('exportStatus').textContent = webhookUrl ? "送信未実行" : "※送信先URL未設定";
-            document.getElementById('exportStatus').className = "text-[9px] " + (webhookUrl ? "text-slate-400" : "text-amber-500");
-        }
-
-        // --- データ送信処理 (GAS / Webhook 両用) ---
-        async function sendDataToWebhook() {
-            if (!webhookUrl) {
-                showToast("データ送信先URLが設定されていません");
-                return;
-            }
-
-            const exportBtn = document.getElementById('exportButton');
-            const statusEl = document.getElementById('exportStatus');
-            
-            exportBtn.disabled = true;
-            statusEl.textContent = "送信中...";
-            statusEl.className = "text-[9px] text-blue-400 animate-pulse";
-
-            // 会話ログをスッキリしたテキストとして整形
-            const formattedTranscript = conversationHistory
-                .filter(h => h.role === "user" || h.role === "model")
-                .map(h => {
-                    const speaker = h.role === "user" ? "市民 (あなた)" : "指令員 (消防本部)";
-                    return `[${speaker}] ${h.content}`;
-                })
-                .join("\n");
-
-            // スコア合計
-            let score = (spokenKeywords.emergency ? 25 : 0) + 
-                        (spokenKeywords.location ? 25 : 0) + 
-                        (spokenKeywords.situation ? 25 : 0) + 
-                        (spokenKeywords.identity ? 25 : 0);
-
-            // 送信データオブジェクト
-            const payload = {
-                timestamp: new Date().toLocaleString("ja-JP"),
-                scenario: activeScenarioTitle,
-                duration: `${Math.floor(callSeconds / 60)}分 ${callSeconds % 60}秒`,
-                score: score,
-                chk_emergency: spokenKeywords.emergency ? "クリア" : "未確認",
-                chk_location: spokenKeywords.location ? "クリア" : "未確認",
-                chk_situation: spokenKeywords.situation ? "クリア" : "未確認",
-                chk_identity: spokenKeywords.identity ? "クリア" : "未確認",
-                transcript: formattedTranscript
-            };
-
-            // Discord / Slack などのWebhook URL用のテキスト変換（GASでない場合）
-            const isDiscord = webhookUrl.includes("discord.com");
-            const isSlack = webhookUrl.includes("hooks.slack.com");
-
-            let requestOptions = {
-                method: "POST",
-                headers: { "Content-Type": "application/json" }
-            };
-
-            if (isDiscord) {
-                const tick = "`" + "`" + "`";
-                // Discord用のJSON構造にマッピング
-                requestOptions.body = JSON.stringify({
-                    embeds: [{
-                        title: "🚨 119番通報訓練結果レポート",
-                        color: score >= 75 ? 3066993 : 15158332, // 緑または赤
-                        fields: [
-                            { name: "日時", value: payload.timestamp, inline: true },
-                            { name: "シナリオ", value: payload.scenario, inline: true },
-                            { name: "通話時間", value: payload.duration, inline: true },
-                            { name: "総合スコア", value: `${payload.score} 点`, inline: true },
-                            { name: "評価項目チェック", value: `・火事/救急の判断: ${payload.chk_emergency}\n・場所の伝達: ${payload.chk_location}\n・状況の説明: ${payload.chk_situation}\n・氏名/連絡先: ${payload.chk_identity}` },
-                            { name: "対話ログ", value: `${tick}\n` + (payload.transcript.length > 800 ? payload.transcript.slice(0, 800) + "..." : payload.transcript) + `\n${tick}` }
-                        ]
-                    }]
-                });
-            } else if (isSlack) {
-                const tick = "`" + "`" + "`";
-                // Slack用のJSON構造にマッピング
-                requestOptions.body = JSON.stringify({
-                    text: `🚨 *119番通報訓練結果レポート*\n*日時*: ${payload.timestamp}\n*お題*: ${payload.scenario}\n*スコア*: ${payload.score}点\n*通話時間*: ${payload.duration}\n${tick}\n${payload.transcript}\n${tick}`
-                });
+            // 送信状況ステータスの更新
+            const statusEl = document.getElementById('autoLogStatus');
+            if (webhookUrl) {
+                statusEl.textContent = "自動記録対応";
+                statusEl.className = "font-bold text-[11px] text-emerald-400";
             } else {
-                // Google Apps Script (GAS) などのカスタムAPIへ生の構造化データを送る
-                requestOptions.body = JSON.stringify(payload);
-            }
-
-            try {
-                const response = await fetch(webhookUrl, {
-                    ...requestOptions,
-                    mode: "cors" 
-                });
-
-                showToast("データを記録しました！");
-                statusEl.textContent = "送信完了";
-                statusEl.className = "text-[9px] text-emerald-400";
-            } catch (err) {
-                console.warn("Fetch warning (likely CORS issue but request might have succeeded):", err);
-                showToast("送信を実行しました（完了確認は送信先をご覧ください）");
-                statusEl.textContent = "送信完了（確認推奨）";
-                statusEl.className = "text-[9px] text-amber-400";
+                statusEl.textContent = "URL未設定";
+                statusEl.className = "font-bold text-[11px] text-amber-500";
             }
         }
 
