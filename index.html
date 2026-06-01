@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>03_119番 通報訓練シミュレーター</title>
+    <title>119番 通報訓練シミュレーター</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
@@ -134,7 +134,7 @@
                 </div>
                 
                 <button onclick="saveSettings()" class="w-full bg-rose-600 hover:bg-rose-500 text-white font-semibold py-3 rounded-2xl transition-all shadow-lg shadow-rose-900/30 flex items-center justify-center gap-2 mt-6 mb-4 text-xs">
-                    <i data-lucide="check" class="w-4 h-4"></i> 設定を保存して戻る
+                    <i data-lucide="check" class="w-4 h-4"></i> 保存して戻る
                 </button>
             </div>
 
@@ -393,7 +393,7 @@
                 </div>
                 <div class="bg-slate-950 p-3 rounded-xl border border-slate-850 border-l-2 border-l-red-500">
                     <span class="font-bold text-red-400 block mb-0.5">最優先：指令員の質問に答える</span>
-                    情報を一気にまくしたてる必要はありません。指令員の誘導する一問一答に従うことで、素早く正しく現場に急行することができます。
+                    情報を一気にままくしたてる必要はありません。指令員の誘導する一問一答に従うことで、素早く正しく現場に急行することができます。
                 </div>
             </div>
         </div>
@@ -434,13 +434,10 @@
         let detectedCallerName = "";
         let detectedCallerPhone = "";
 
-        // 【会話の進行フェーズ管理】
-        // 0: 開始（火事救急の選択）
-        // 1: 場所の聞き取り
-        // 2: 状況の聞き取り
-        // 3: 氏名・連絡先の聞き取り
-        // 4: 終了
-        let currentPhase = 0;
+        // 【会話の進行管理（State Machine）】
+        // emergencyType: null (未決定) / 'fire' (火事) / 'ambulance' (救急)
+        let emergencyType = null;
+        let currentStepIndex = 0;
 
         // 判定キーワード用 (訓練レポート用スコアリング)
         let spokenKeywords = {
@@ -627,7 +624,10 @@
             // 状態と検出パラメータの初期化
             detectedCallerName = "";
             detectedCallerPhone = "";
-            currentPhase = 0; // フェーズをゼロにリセット
+            
+            // 重要：状態管理用の変数を初期状態にリセット
+            emergencyType = null; 
+            currentStepIndex = 0; 
 
             setTimeout(() => {
                 document.getElementById('dialView').classList.add('hidden');
@@ -905,38 +905,91 @@
             }
         }
 
-        // --- 【改良：状態管理（State Machine）による一本道の確実なローカル擬似対話フロー】 ---
+        // --- 【改良：状態管理（State Machine）による、一本道・完全な指定対話フローの構築】 ---
         function simulateOfflineCall(userText) {
             let responseText = "";
 
-            // 初回のサイレントトリガー（発信直後）
+            // --- 0. 回線発信直後の初期応答 ---
             if (userText === "（119番通報を発信しました）") {
-                currentPhase = 0;
-                responseText = "はい、１１９番消防本部です。火事ですか、救急ですか？";
+                emergencyType = null;
+                currentStepIndex = 0;
+                responseText = "はい 消防119番です火事ですか 救急ですか。";
                 fallbackLocalTTS(responseText);
                 return;
             }
 
-            // フェーズ状態にのみ基づいて、一歩ずつ進む
-            if (currentPhase === 0) {
-                // 「火事ですか救急ですか」に対して何か答えたら、場所フェーズへ
-                currentPhase = 1;
-                responseText = "分かりました。場所はどちらですか？市区町村名から教えてください。";
-            } else if (currentPhase === 1) {
-                // 「場所」を何か答えたら、状況フェーズへ
-                currentPhase = 2;
-                responseText = "場所を確認しました。何があったか、詳しい状況を教えてください。";
-            } else if (currentPhase === 2) {
-                // 「状況」を何か答えたら、お名前・連絡先フェーズへ
-                currentPhase = 3;
-                responseText = "状況を把握しました。最後に、あなたのお名前と、今使っているお電話番号を教えてください。";
-            } else if (currentPhase === 3) {
-                // 「名前・連絡先」を何か答えたら、通話終了へ
-                currentPhase = 4;
-                responseText = "ありがとうございます。救急隊と消防隊をそちらに向かわせます。安全な場所でお待ちください。それでは失礼します。";
-            } else {
-                // 万が一以降の発話があった場合
-                responseText = "救急隊が向かっていますので、そのままお待ちくださいね。電話を切ります。";
+            // --- 1. 緊急要請タイプの確定（初回の「火事」または「救急」の判定） ---
+            if (emergencyType === null) {
+                if (userText.includes("火事") || userText.includes("かじ") || userText.includes("火災")) {
+                    emergencyType = 'fire';
+                    currentStepIndex = 1;
+                    responseText = "消防車を向かわせる場所を教えてください。";
+                } else {
+                    // デフォルトまたは救急判定
+                    emergencyType = 'ambulance';
+                    currentStepIndex = 1;
+                    responseText = "分かりました。場所はどちらですか？市区町村名から教えてください。";
+                }
+                fallbackLocalTTS(responseText);
+                return;
+            }
+
+            // --- 2-A. 火事（新フロー：14ステップ一問一答）の進行 ---
+            if (emergencyType === 'fire') {
+                if (currentStepIndex === 1) {
+                    currentStepIndex = 2;
+                    responseText = "住所が分かれば住所を教えてください。住所が分からなければ近くにあるお店の名前等を教えてください。";
+                } else if (currentStepIndex === 2) {
+                    currentStepIndex = 3;
+                    responseText = "燃えている建物は 何階建てですか。";
+                } else if (currentStepIndex === 3) {
+                    currentStepIndex = 4;
+                    responseText = "燃えているのは何階のどの部屋か分かりますか";
+                } else if (currentStepIndex === 4) {
+                    currentStepIndex = 5;
+                    responseText = "初期消火 は行ってますか";
+                } else if (currentStepIndex === 5) {
+                    currentStepIndex = 6;
+                    responseText = "火はまだ燃えてますか それとも消えてますか";
+                } else if (currentStepIndex === 6) {
+                    currentStepIndex = 7;
+                    responseText = "建物の中には何人ぐらいの人がいますか";
+                } else if (currentStepIndex === 7) {
+                    currentStepIndex = 8;
+                    responseText = "全員 避難 は完了してますか";
+                } else if (currentStepIndex === 8) {
+                    currentStepIndex = 9;
+                    responseText = "逃げ遅れの人はいませんか";
+                } else if (currentStepIndex === 9) {
+                    currentStepIndex = 10;
+                    responseText = "今分かっている範囲で怪我をしている人はいませんか";
+                } else if (currentStepIndex === 10) {
+                    currentStepIndex = 11;
+                    responseText = "最後に通報者ということであなたの名前を教えてください";
+                } else if (currentStepIndex === 11) {
+                    currentStepIndex = 12;
+                    responseText = "あなたは燃えている建物とどういう関係の方ですか。通行人ですか。";
+                } else if (currentStepIndex === 12) {
+                    currentStepIndex = 13;
+                    responseText = "分かりました。消防車は、今向かっています。安全な場所に避難してお待ちください。消防車が見えてきたら、手を振って消防車の誘導をお願いします。";
+                } else {
+                    responseText = "消防車が到着するまで安全な場所で避難を続けてください。電話を切ります。";
+                }
+            } 
+            // --- 2-B. 救急（従来フロー：5ステップ一問一答）の進行 ---
+            else if (emergencyType === 'ambulance') {
+                if (currentStepIndex === 1) {
+                    currentStepIndex = 2;
+                    responseText = "場所を確認しました。何があったか、詳しい状況を教えてください。";
+                } else if (currentStepIndex === 2) {
+                    currentStepIndex = 3;
+                    responseText = "状況を把握しました。最後に、あなたのお名前と、今使っているお電話番号を教えてください。";
+                } else if (currentStepIndex === 3) {
+                    currentStepIndex = 4;
+                    responseText = "ありがとうございます。救急隊と消防隊をそちらに向かわせます。安全な場所でお待ちください。それでは失礼します。";
+                } else {
+                    responseText = "救急隊が間もなく到着します。電話を切ります。";
+                }
             }
 
             fallbackLocalTTS(responseText);
