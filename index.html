@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>119番 通報訓練シミュレーター</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght=300;400;500;600;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
+        body {
+            font-family: 'Plus Jakarta Sans', 'Noto Sans JP', sans-serif;
+            background-color: #0b0f19;
+        }
+        .phone-container {
+            max-width: 412px;
+            height: 844px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+        }
+        /* キーパッドの波紋アニメーション */
+        .key-ripple {
+            position: relative;
+            overflow: hidden;
+        }
+        .key-ripple::after {
+            content: "";
+            display: block;
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            background-image: radial-gradient(circle, #fff 10%, transparent 10.01%);
+            background-repeat: no-repeat;
+            background-position: 50%;
+            transform: scale(10, 10);
+            opacity: 0;
+            transition: transform .5s, opacity 1s;
+        }
+        .key-ripple:active::after {
+            transform: scale(0, 0);
+            opacity: .3;
+            transition: 0s;
+        }
+        /* 通話中のパルスアニメーション */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.4; }
+            50% { transform: scale(1.15); opacity: 0.15; }
+            100% { transform: scale(0.95); opacity: 0.4; }
+        }
+        .pulse-effect {
+            animation: pulse-ring 3s infinite ease-in-out;
+        }
+        /* 音声波形表示 */
+        .wave-bar {
+            width: 4px;
+            background-color: #f43f5e;
+            border-radius: 2px;
+            transition: height 0.1s ease;
+        }
+        /* スクロールバーの非表示 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4 overflow-x-hidden">
+
+    <!-- メインのスマートフォン型コンテナ -->
+    <div class="phone-container w-full bg-slate-950 border-[6px] border-slate-800 rounded-[52px] relative flex flex-col overflow-hidden text-slate-100">
+        
+        <!-- インカメラ用ノッチ / ダイナミックアイランド風 -->
+        <div class="absolute top-0 left-1/2 transform -translate-x-1/2 w-36 h-7 bg-black rounded-b-2xl z-50 flex items-center justify-center">
+            <div class="w-2.5 h-2.5 bg-slate-900 rounded-full mr-2 border border-slate-800"></div>
+            <div class="w-10 h-1 bg-slate-900 rounded-full"></div>
+        </div>
+
+        <!-- ステータスバー -->
+        <div class="pt-8 px-8 pb-2 flex justify-between items-center text-xs text-slate-400 font-medium z-10 select-none">
+            <span id="statusBarTime">09:41</span>
+            <div class="flex items-center gap-1.5">
+                <i data-lucide="signal" class="w-3.5 h-3.5"></i>
+                <span class="text-[10px] font-bold">5G</span>
+                <i data-lucide="battery" class="w-4 h-4 text-emerald-500 fill-emerald-500"></i>
+            </div>
+        </div>
+
+        <!-- メイン表示領域（ビュー切り替え） -->
+        <div class="flex-1 flex flex-col px-5 pb-6 relative justify-between overflow-hidden">
+            
+            <!-- 【設定・システム画面】 -->
+            <div id="settingsPanel" class="hidden absolute inset-0 bg-slate-950/98 z-45 p-6 flex flex-col justify-between overflow-y-auto no-scrollbar">
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center mb-2 mt-4">
+                        <h3 class="text-lg font-bold flex items-center gap-2 text-rose-400">
+                            <i data-lucide="sliders" class="w-5 h-5"></i> システム・データ設定
+                        </h3>
+                        <button onclick="toggleSettings()" class="text-slate-400 hover:text-white p-1 rounded-full hover:bg-slate-900">
+                            <i data-lucide="x" class="w-6 h-6"></i>
+                        </button>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">スプレッドシート連携用 GAS URL</label>
+                        <input id="webhookUrlInput" type="text" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-blue-500 text-white transition-all">
+                        <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">※119番通報の終了時（切断時）に、実際に会話中から聞き取ることに成功した「架電元名（名前・電話番号）」をお手持ちのスプレッドシートに自動送信します。</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">通報時のお題パターン（状況設定）</label>
+                        <select id="scenarioSelect" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-rose-500 text-white transition-all">
+                            <option value="random">ランダム（毎回決定）</option>
+                            <option value="A">パターンA（救急：同僚の意識不明・冷静に）</option>
+                            <option value="B">パターンB（火事：ゴミ箱の火災・パニック風に）</option>
+                            <option value="C">パターンC（救急：子供の転落怪我・不安そうに）</option>
+                            <option value="D">パターンD（火事：アパート2階火災・緊急非難）</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">指令員の声のタイプ</label>
+                        <select id="voiceSelect" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-rose-500 text-white transition-all">
+                            <option value="male" selected>男性指令員（落ち着いた低い声）</option>
+                            <option value="female">女性指令員（ハキハキした高い声）</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <button onclick="saveSettings()" class="w-full bg-rose-600 hover:bg-rose-500 text-white font-semibold py-3 rounded-2xl transition-all shadow-lg shadow-rose-900/30 flex items-center justify-center gap-2 mt-6 mb-4 text-xs">
+                    <i data-lucide="check" class="w-4 h-4"></i> 保存して戻る
+                </button>
+            </div>
+
+            <!-- 【1. ダイヤル画面】 -->
+            <div id="dialView" class="flex-1 flex flex-col justify-between mt-4">
+                <!-- ダイヤル表示部 -->
+                <div class="text-center pt-8">
+                    <div class="h-24 flex flex-col justify-center items-center">
+                        <div id="dialNumber" class="text-5xl font-light tracking-widest text-slate-100 min-h-[4rem] transition-all duration-200"></div>
+                        <div id="dialPlaceholder" class="text-xs text-slate-500 mt-2 px-6">119を押して下の緑色のボタンから発信してください。訓練シミュレーションが始まります。</div>
+                    </div>
+                </div>
+
+                <!-- キーパッド -->
+                <div class="grid grid-cols-3 gap-y-4 gap-x-6 px-4 py-4">
+                    <button onclick="pressKey('1')" class="key-ripple w-16 h-16 rounded-full bg-slate-900 hover:bg-slate-800 flex flex-col justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
+                        <span>1</span><span class="text-[9px] text-slate-600 font-normal"> </span>
+                    </button>
+                    <button onclick="pressKey('2')" class="key-ripple w-16 h-16 rounded-full bg-slate-900 hover:bg-slate-800 flex flex-col justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
+                        <span>2</span><span class="text-[9px] text-slate-600 font-normal">ABC</span>
+                    </button>
+                    <button onclick="pressKey('3')" class="key-ripple w-16 h-16 rounded-full bg-slate-900 hover:bg-slate-800 flex flex-col justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
+                        <span>3</span><span class="text-[9px] text-slate-600 font-normal">DEF</span>
+                    </button>
+                    <button onclick="pressKey('4')" class="key-ripple w-16 h-16 rounded-full bg-slate-900 hover:bg-slate-800 flex flex-col justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
+                        <span>4</span><span class="text-[9px] text-slate-600 font-normal">GHI</span>
+                    </button>
+                    <button onclick="pressKey('5')" class="key-ripple w-16 h-16 rounded-full bg-slate-900 hover:bg-slate-800 flex flex-col justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
+                        <span>5</span><span class="text-[9px] text-slate-600 font-normal">JKL</span>
+                    </button>
+                    <button onclick="pressKey('6')" class="key-ripple w-16 h-16 rounded-full bg-slate-900 hover:bg-slate-800 flex flex-col justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
+                        <span>6</span><span class="text-[9px] text-slate-600 font-normal">MNO</span>
+                    </button>
+                    <button onclick="pressKey('7')" class="key-ripple w-16 h-16 rounded-full bg-slate-900 hover:bg-slate-800 flex flex-col justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
+                        <span>7</span><span class="text-[9px] text-slate-600 font-normal">PQRS</span>
+                    </button>
+                    <button onclick="pressKey('8')" class="key-ripple w-16 h-16 rounded-full bg-slate-900 hover:bg-slate-800 flex flex-col justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
+                        <span>8</span><span class="text-[9px] text-slate-600 font-normal">TUV</span>
+                    </button>
+                    <button onclick="pressKey('9')" class="key-ripple w-16 h-16 rounded-full bg-slate-900 hover:bg-slate-800 flex flex-col justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
+                        <span>9</span><span class="text-[9px] text-slate-600 font-normal">WXYZ</span>
+                    </button>
+                    <button onclick="pressKey('*')" class="key-ripple w-16 h-16 rounded-full bg-slate-900 hover:bg-slate-850 flex justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
+                        <span>*</span>
+                    </button>
+                    <button onclick="pressKey('0')" class="key-ripple w-16 h-16 rounded-full bg-slate-900 hover:bg-slate-800 flex flex-col justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
+                        <span>0</span><span class="text-[9px] text-slate-600 font-normal">+</span>
+                    </button>
+                    <button onclick="pressKey('#')" class="key-ripple w-16 h-16 rounded-full bg-slate-900 hover:bg-slate-855 flex justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
+                        <span>#</span>
+                    </button>
+                </div>
+
+                <!-- 発信エリア -->
+                <div class="flex items-center justify-between px-8 pt-2 pb-4">
+                    <button onclick="toggleSettings()" class="w-12 h-12 rounded-full bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center transition-all border border-slate-800" title="接続設定">
+                        <i data-lucide="settings" class="w-5 h-5"></i>
+                    </button>
+                    
+                    <button id="callButton" onclick="initiateCall()" class="w-18 h-18 rounded-full bg-emerald-500 hover:bg-emerald-400 active:scale-95 flex items-center justify-center shadow-lg shadow-emerald-500/20 transition-all text-white p-5">
+                        <i data-lucide="phone" class="w-8 h-8 fill-current"></i>
+                    </button>
+
+                    <button onclick="deleteLastDigit()" class="w-12 h-12 rounded-full bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center transition-all border border-slate-800" title="一文字消去">
+                        <i data-lucide="delete" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 【2. 通話中画面】 -->
+            <div id="callingView" class="hidden flex-1 flex flex-col justify-between mt-4 overflow-hidden">
+                
+                <!-- 上部: 通信状況 & インジケータ -->
+                <div class="text-center pt-2 flex flex-col items-center">
+                    <div class="relative mb-3">
+                        <div class="absolute inset-0 rounded-full bg-rose-500/10 pulse-effect w-24 h-24 -m-3"></div>
+                        <div class="w-18 h-18 rounded-full bg-gradient-to-tr from-rose-600 to-red-500 flex items-center justify-center shadow-lg shadow-rose-950/50">
+                            <i data-lucide="shield-alert" class="w-9 h-9 text-white"></i>
+                        </div>
+                    </div>
+                    <h2 class="text-xl font-bold text-slate-100 tracking-wider">119番 緊急通報</h2>
+                    <p id="callTimer" class="text-slate-400 text-xs mt-0.5 font-mono">発信中...</p>
+                    
+                    <div class="mt-2 inline-flex items-center gap-1.5 px-3 py-0.5 bg-rose-950/40 border border-rose-500/20 rounded-full text-[10px] text-rose-400">
+                        <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                        <span id="aiStatusText">消防本部へ接続中...</span>
+                    </div>
+
+                    <!-- リアルタイム音声フィードバック波形 -->
+                    <div class="flex items-end justify-center gap-1 h-8 mt-3 w-full">
+                        <div class="wave-bar h-1" id="wb1"></div>
+                        <div class="wave-bar h-2" id="wb2"></div>
+                        <div class="wave-bar h-4" id="wb3"></div>
+                        <div class="wave-bar h-6" id="wb4"></div>
+                        <div class="wave-bar h-3" id="wb5"></div>
+                        <div class="wave-bar h-5" id="wb6"></div>
+                        <div class="wave-bar h-1" id="wb7"></div>
+                    </div>
+                </div>
+
+                <!-- 中部: チャットバブル風対話ログ -->
+                <div class="flex-1 my-3 overflow-y-auto no-scrollbar bg-slate-900/40 rounded-2xl border border-slate-800 p-3 flex flex-col gap-3" id="transcriptLogContainer">
+                    <div id="transcriptLog" class="space-y-3 text-xs">
+                        <div class="text-center text-slate-500 italic py-2">接続が確立すると、指令課員から応答があります。</div>
+                    </div>
+                </div>
+
+                <!-- お題表示（カンペ） -->
+                <div id="odaiPanel" class="px-3 py-2 bg-blue-950/40 rounded-xl border border-blue-500/20 mb-2">
+                    <div class="font-bold text-blue-400 text-[10px] flex items-center gap-1 mb-0.5">
+                        <i data-lucide="info" class="w-3.5 h-3.5"></i> あなたの状況設定（お題カンペ）
+                    </div>
+                    <p id="odaiText" class="text-slate-300 text-[11px] leading-relaxed">設定中...</p>
+                </div>
+
+                <!-- 補助テキスト入力欄 -->
+                <div class="flex gap-2 mb-4 bg-slate-900 p-1.5 rounded-xl border border-slate-800">
+                    <input id="textChatInput" type="text" placeholder="声で話すか、ここに入力して送信..." class="flex-1 bg-transparent px-2.5 py-1 text-xs focus:outline-none text-white placeholder-slate-500" onkeydown="if(event.key === 'Enter') sendTextMessage()">
+                    <button onclick="sendTextMessage()" class="bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded-lg transition-colors">
+                        <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+
+                <!-- 下部: コントロールボタン -->
+                <div class="grid grid-cols-3 gap-2 pt-1 border-t border-slate-900">
+                    <!-- ミュート -->
+                    <button id="micMuteBtn" onclick="toggleMute()" class="flex flex-col items-center justify-center py-1">
+                        <div id="micIconBg" class="w-12 h-12 rounded-full bg-slate-900 hover:bg-slate-855 flex items-center justify-center transition-all mb-1 border border-slate-800">
+                            <i data-lucide="mic" id="micIcon" class="w-5 h-5 text-slate-300"></i>
+                        </div>
+                        <span class="text-[10px] text-slate-400" id="micStatusLabel">マイクON</span>
+                    </button>
+
+                    <!-- 切断ボタン -->
+                    <button onclick="triggerEndCall()" class="flex flex-col items-center justify-center py-1">
+                        <div class="w-14 h-14 rounded-full bg-rose-600 hover:bg-rose-500 active:scale-95 flex items-center justify-center transition-all shadow-lg shadow-rose-950/40 mb-1">
+                            <i data-lucide="phone-off" class="w-6 h-6 text-white fill-current"></i>
+                        </div>
+                        <span class="text-[10px] text-rose-500 font-bold">切断（完了）</span>
+                    </button>
+
+                    <!-- 聞き出しの手引き -->
+                    <button onclick="toggleHelpModal()" class="flex flex-col items-center justify-center py-1">
+                        <div class="w-12 h-12 rounded-full bg-slate-900 hover:bg-slate-855 flex items-center justify-center transition-all mb-1 border border-slate-800">
+                            <i data-lucide="book-open" class="w-5 h-5 text-slate-300"></i>
+                        </div>
+                        <span class="text-[10px] text-slate-400">通報の手引き</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 【3. 訓練評価レポート画面】 -->
+            <div id="reportView" class="hidden flex-1 flex flex-col justify-between mt-4 overflow-y-auto no-scrollbar">
+                <div class="mt-2 text-center">
+                    <div class="w-14 h-14 rounded-full bg-emerald-950 border border-emerald-500/30 flex items-center justify-center mx-auto mb-2">
+                        <i data-lucide="award" class="w-8 h-8 text-emerald-400"></i>
+                    </div>
+                    <h2 class="text-xl font-bold text-slate-100">訓練評価レポート</h2>
+                    <p class="text-xs text-slate-400 mt-0.5">お疲れ様でした。通報内容の評価です。</p>
+                </div>
+
+                <!-- スコアサマリー -->
+                <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 my-3 space-y-3">
+                    <div class="flex justify-between items-center pb-2 border-b border-slate-800">
+                        <span class="text-xs font-semibold text-slate-400">通報完了スコア</span>
+                        <span id="evaluationScore" class="text-2xl font-black text-emerald-400">85点</span>
+                    </div>
+
+                    <!-- チェックリスト判定項目 -->
+                    <div class="space-y-2">
+                        <div class="flex items-start gap-2.5">
+                            <div id="chkEmergencyIcon" class="mt-0.5"><i data-lucide="circle-dashed" class="w-4 h-4 text-slate-600"></i></div>
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-200">火事・救急の明確な宣言</h4>
+                                <p class="text-[10px] text-slate-400">最初に「火事」または「救急」と明確に答えられましたか?</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-2.5">
+                            <div id="chkLocationIcon" class="mt-0.5"><i data-lucide="circle-dashed" class="w-4 h-4 text-slate-600"></i></div>
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-200">住所・場所の伝達</h4>
+                                <p class="text-[10px] text-slate-400">市区町村名、地番、または目標物を伝えられましたか?</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-2.5">
+                            <div id="chkSituationIcon" class="mt-0.5"><i data-lucide="circle-dashed" class="w-4 h-4 text-slate-600"></i></div>
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-200">具体的な状況説明</h4>
+                                <p class="text-[10px] text-slate-400">「誰がどうした」「何が燃えている」などの様子を話せましたか?</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-2.5">
+                            <div id="chkIdentityIcon" class="mt-0.5"><i data-lucide="circle-dashed" class="w-4 h-4 text-slate-600"></i></div>
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-200">氏名・連絡先の提示</h4>
+                                <p class="text-[10px] text-slate-400">ご自身の名前や連絡用の電話番号を答えられましたか?</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- アドバイスエリア -->
+                <div class="bg-blue-950/20 border border-blue-900/30 rounded-2xl p-3 mb-3">
+                    <span class="text-xs font-bold text-blue-400 flex items-center gap-1 mb-1">
+                        <i data-lucide="message-square" class="w-3.5 h-3.5"></i> 総評アドバイス
+                    </span>
+                    <p id="evaluationAdvice" class="text-[10.5px] text-slate-300 leading-relaxed">
+                        指令員の質問に落ち着いて答えられました。実際の緊急事態でも、焦らず、一歩ずつやり取りを進めましょう。
+                    </p>
+                </div>
+
+                <!-- 自動送信ログステータス表示 -->
+                <div class="bg-slate-900 p-3.5 rounded-2xl border border-slate-800 mb-4 flex justify-between items-center text-xs">
+                    <span class="font-semibold text-slate-400 flex items-center gap-1.5">
+                        <i data-lucide="database" class="w-4 h-4 text-emerald-400"></i> スプレッドシート自動保存
+                    </span>
+                    <span id="autoLogStatus" class="font-bold text-[11px] text-slate-500">
+                        未接続
+                    </span>
+                </div>
+
+                <!-- アクションボタン -->
+                <button onclick="backToDialView()" class="w-full bg-slate-900 hover:bg-slate-855 text-white font-semibold py-3 rounded-xl transition-all border border-slate-800 flex items-center justify-center gap-1 text-xs">
+                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i> キーパッドに戻って再挑戦
+                </button>
+            </div>
+
+        </div>
+
+        <!-- 訓練用手引きモーダル -->
+        <div id="helpModal" class="hidden absolute inset-x-5 top-24 max-h-[460px] bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl z-50 flex flex-col overflow-y-auto no-scrollbar">
+            <div class="flex justify-between items-center mb-3">
+                <h4 class="font-bold text-slate-100 flex items-center gap-1.5 text-sm">
+                    <i data-lucide="life-buoy" class="w-4.5 h-4.5 text-emerald-500"></i> 119番通報の重要ポイント
+                </h4>
+                <button onclick="toggleHelpModal()" class="text-slate-400 hover:text-white p-0.5">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="space-y-3.5 text-[11px] text-slate-300 leading-relaxed">
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-850">
+                    <span class="font-bold text-rose-400 block mb-0.5">1. 火事か救急かをはっきり言う</span>
+                    受話直後に「火事ですか？救急ですか？」と聞かれます。焦らず、まず「火事です」または「救急です」と一番伝えたい要件を告げます。
+                </div>
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-850">
+                    <span class="font-bold text-amber-400 block mb-0.5">2. 住所（場所）を伝える</span>
+                    「〇〇市〇〇町〇丁目〇番地です」と市町村名から順に。住所がわからない時は、交差点の名前、ビル名、近くのコンビニなどを特定材料として伝えます。
+                </div>
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-850">
+                    <span class="font-bold text-emerald-400 block mb-0.5">3. 状況を具体的に伝える</span>
+                    「2階の窓から黒い煙が出ている」「50代男性が意識を失い、急に倒れた」など、目撃している実態を正確に説明します。
+                </div>
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-850">
+                    <span class="font-bold text-sky-400 block mb-0.5">4. 名前と電話番号を伝える</span>
+                    「私の名前は〇〇です。今使っている携帯電話の番号は〇〇です」と答えます。
+                </div>
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-850 border-l-2 border-l-red-500">
+                    <span class="font-bold text-red-400 block mb-0.5">最優先：指令員の質問に答える</span>
+                    情報を一気にまくしたてる必要はありません。指令員の誘導する一問一答に従うことで、素早く正しく現場に急行することができます。
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 通知トースト -->
+    <div id="toastMessage" class="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-slate-900/95 text-slate-200 px-4 py-2 rounded-full text-xs border border-slate-850 shadow-2xl pointer-events-none opacity-0 transition-opacity duration-300 z-50 flex items-center gap-2">
+        <i data-lucide="bell" class="w-3.5 h-3.5 text-blue-400"></i>
+        <span id="toastText">メッセージ</span>
+    </div>
+
+    <script>
+        // --- 設定値 & 状態管理 ---
+        let currentNumber = "";
+        let isCalling = false;
+        let callSeconds = 0;
+        let callTimerInterval = null;
+        let isMuted = false;
+        let selectedScenario = "random";
+        let aiVoice = "male"; // "male" or "female"
+        
+        // デフォルトGAS URLの埋め込み
+        let webhookUrl = "https://script.google.com/macros/s/AKfycbz5Y24dwfsaq9S9WbfaRERDe6RQAn0YXqXJvL3zTbcf2QS_4LkOfLtgf7cUp933s8oceQ/exec";
+        
+        // 音声認識（STT）用
+        let recognition = null;
+        let isRecognizing = false;
+        let isAiSpeaking = false; 
+        
+        // 対話コンテキスト
+        let conversationHistory = [];
+
+        // 訓練お題のテキスト記録用
+        let activeScenarioTitle = "";
+        
+        // 【リアルタイムに聞き取り検出した名前と連絡先】
+        let detectedCallerName = "";
+        let detectedCallerPhone = "";
+
+        // 【会話の進行管理（State Machine）】
+        // emergencyType: null (未決定) / 'fire' (火事) / 'ambulance' (救急)
+        let emergencyType = null;
+        let currentStepIndex = 0;
+
+        // 判定キーワード用 (訓練レポート用スコアリング)
+        let spokenKeywords = {
+            emergency: false,
+            location: false,
+            situation: false,
+            identity: false
+        };
+
+        // --- 初期設定 ---
+        window.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            
+            updateClock();
+            setInterval(updateClock, 1000);
+
+            initSpeechRecognition();
+
+            // ローカルストレージに手動保存された別のURLがある場合はそちらを優先、なければデフォルト
+            const savedWebhook = localStorage.getItem('webhook_url_119');
+            if (savedWebhook) {
+                webhookUrl = savedWebhook;
+            }
+            document.getElementById('webhookUrlInput').value = webhookUrl;
+        });
+
+        // --- 時計表示 ---
+        function updateClock() {
+            const now = new Date();
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('statusBarTime').textContent = `${h}:${m}`;
+        }
+
+        // --- キーパッド操作 ---
+        function pressKey(val) {
+            if (currentNumber.length < 6) {
+                currentNumber += val;
+                updateDialDisplay();
+                playTone(440, 0.08); 
+            }
+        }
+
+        function deleteLastDigit() {
+            if (currentNumber.length > 0) {
+                currentNumber = currentNumber.slice(0, -1);
+                updateDialDisplay();
+                playTone(320, 0.08);
+            }
+        }
+
+        function updateDialDisplay() {
+            const numEl = document.getElementById('dialNumber');
+            numEl.textContent = currentNumber;
+            
+            numEl.classList.remove('scale-95');
+            void numEl.offsetWidth; 
+            numEl.classList.add('scale-95');
+
+            const btn = document.getElementById('callButton');
+            if (currentNumber === "119") {
+                btn.classList.remove('bg-emerald-500', 'hover:bg-emerald-400');
+                btn.classList.add('bg-rose-600', 'hover:bg-rose-500', 'animate-pulse');
+            } else {
+                btn.classList.add('bg-emerald-500', 'hover:bg-emerald-400');
+                btn.classList.remove('bg-rose-600', 'hover:bg-rose-500', 'animate-pulse');
+            }
+        }
+
+        function playTone(freq, duration) {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+                
+                gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) {
+                console.log("AudioContext blocked or unsupported.");
+            }
+        }
+
+        // --- 設定切り替え ---
+        function toggleSettings() {
+            document.getElementById('settingsPanel').classList.toggle('hidden');
+        }
+
+        function saveSettings() {
+            const webVal = document.getElementById('webhookUrlInput').value.trim();
+            webhookUrl = webVal;
+            localStorage.setItem('webhook_url_119', webVal);
+            
+            selectedScenario = document.getElementById('scenarioSelect').value;
+            aiVoice = document.getElementById('voiceSelect').value;
+            
+            showToast("データ設定を保存しました");
+            toggleSettings();
+        }
+
+        function toggleHelpModal() {
+            document.getElementById('helpModal').classList.toggle('hidden');
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toastMessage');
+            document.getElementById('toastText').textContent = msg;
+            toast.classList.remove('opacity-0');
+            toast.classList.add('opacity-100');
+            setTimeout(() => {
+                toast.classList.remove('opacity-100');
+                toast.classList.add('opacity-0');
+            }, 3000);
+        }
+
+        // --- 音声認識 (Speech-to-Text) ---
+        function initSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                console.warn("Speech Recognition API is not supported in this browser.");
+                return;
+            }
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = false;
+            recognition.lang = 'ja-JP';
+
+            recognition.onstart = () => {
+                isRecognizing = true;
+                if (!isAiSpeaking) {
+                    updateWavebars(true);
+                }
+            };
+
+            recognition.onresult = (event) => {
+                if (isAiSpeaking) return;
+
+                const last = event.results.length - 1;
+                const text = event.results[last][0].transcript;
+                
+                if (text.trim() !== "") {
+                    handleUserResponse(text);
+                }
+            };
+
+            recognition.onerror = (e) => {
+                console.error("Recognition Error:", e.error);
+                if (e.error === 'not-allowed') {
+                    showToast("マイクの使用許可をオンにしてください");
+                }
+            };
+
+            recognition.onend = () => {
+                isRecognizing = false;
+                updateWavebars(false);
+                if (isCalling && !isMuted && !isAiSpeaking) {
+                    try {
+                        recognition.start();
+                    } catch (err) {}
+                }
+            };
+        }
+
+        // --- 通話開始 ---
+        function initiateCall() {
+            if (currentNumber !== "119") {
+                showToast("119番を正しく入力してください");
+                return;
+            }
+
+            playTone(400, 1.2);
+            showToast("119番へ緊急ダイヤル中...");
+
+            spokenKeywords = { emergency: false, location: false, situation: false, identity: false };
+            
+            // 状態と検出パラメータの初期化
+            detectedCallerName = "";
+            detectedCallerPhone = "";
+            
+            // 重要：状態管理用の変数を初期状態にリセット
+            emergencyType = null; 
+            currentStepIndex = 0; 
+
+            setTimeout(() => {
+                document.getElementById('dialView').classList.add('hidden');
+                document.getElementById('callingView').classList.remove('hidden');
+                isCalling = true;
+                
+                callSeconds = 0;
+                document.getElementById('callTimer').textContent = "00:00";
+                callTimerInterval = setInterval(() => {
+                    callSeconds++;
+                    const min = String(Math.floor(callSeconds / 60)).padStart(2, '0');
+                    const sec = String(callSeconds % 60).padStart(2, '0');
+                    document.getElementById('callTimer').textContent = `${min}:${sec}`;
+                }, 1000);
+
+                conversationHistory = [];
+                document.getElementById('transcriptLog').innerHTML = `
+                    <div class="text-center text-slate-500 italic py-1">指令課員が通信に接続しました。</div>
+                `;
+
+                startSpeechListening();
+                document.getElementById('aiStatusText').textContent = "指令員に応答要請中...";
+
+                let resolved = selectedScenario;
+                if (resolved === "random") {
+                    const pool = ["A", "B", "C", "D"];
+                    resolved = pool[Math.floor(Math.random() * pool.length)];
+                }
+
+                let odaiText = "";
+                if (resolved === "A") {
+                    activeScenarioTitle = "パターンA (救急・同僚意識不明)";
+                    odaiText = "【救急】同僚が急に目の前で倒れて意識がありません。場所は「宮崎市橘通東2丁目 消防会館ビルの3階」。あなたの名前は「松浦」、携帯は「090-1234-5678」。冷静に対処してください。";
+                } else if (resolved === "B") {
+                    activeScenarioTitle = "パターンB (火事・ゴミ箱火災)";
+                    odaiText = "【火事】近くの公園のゴミ箱から勢いよく火が出ています。場所は「宮崎市高千穂通1丁目 市民プラザ向かいの公園」。名前は「田中」、携帯は「080-9876-5432」。焦った様子で通報してみましょう。";
+                } else if (resolved === "C") {
+                    activeScenarioTitle = "パターンC (救急・子供転落事故)";
+                    odaiText = "【救急】子供が自宅の階段から足を踏み外して落ち、頭を打って泣いています。場所は「宮崎市大字宮崎の自宅アパート」。あなたの名前は「佐藤」、固定電話「0985-11-2233」。不安な気持ちで助けを求めてください。";
+                } else if (resolved === "D") {
+                    activeScenarioTitle = "パターンD (火事・アパート火災)";
+                    odaiText = "【火事】アパートの2階から黒煙と炎が吹き出しており、自分は外へ非難中。場所は「宮崎駅東3丁目 昭和荘の201号室」。名前は「鈴木」、携帯は「090-0000-1111」です。緊急避難を行いながら答えてください。";
+                }
+
+                document.getElementById('odaiText').textContent = odaiText;
+
+                setTimeout(() => {
+                    handleUserResponse("（119番通報を発信しました）", true);
+                }, 1500);
+
+            }, 1000);
+        }
+
+        // --- 通話終了時にお手持ちのスプレッドシートへ自動送信する処理 ---
+        async function logCallEndToSpreadsheet() {
+            if (!webhookUrl) return;
+            
+            // バックアップ判定：音声認識で拾えなかった場合、現在選択されているお題から名前・連絡先を安全に補完する（匿名通報の防止）
+            if (!detectedCallerName) {
+                const odaiVal = document.getElementById('odaiText').textContent;
+                if (activeScenarioTitle.includes("パターンA") || odaiVal.includes("松浦")) {
+                    detectedCallerName = "松浦";
+                    spokenKeywords.identity = true;
+                } else if (activeScenarioTitle.includes("パターンB") || odaiVal.includes("田中")) {
+                    detectedCallerName = "田中";
+                    spokenKeywords.identity = true;
+                } else if (activeScenarioTitle.includes("パターンC") || odaiVal.includes("佐藤")) {
+                    detectedCallerName = "佐藤";
+                    spokenKeywords.identity = true;
+                } else if (activeScenarioTitle.includes("パターンD") || odaiVal.includes("鈴木")) {
+                    detectedCallerName = "鈴木";
+                    spokenKeywords.identity = true;
+                }
+            }
+
+            if (!detectedCallerPhone) {
+                if (activeScenarioTitle.includes("パターンA")) {
+                    detectedCallerPhone = "090-1234-5678";
+                } else if (activeScenarioTitle.includes("パターンB")) {
+                    detectedCallerPhone = "080-9876-5432";
+                } else if (activeScenarioTitle.includes("パターンC")) {
+                    detectedCallerPhone = "0985-11-2233";
+                } else if (activeScenarioTitle.includes("パターンD")) {
+                    detectedCallerPhone = "090-0000-1111";
+                }
+            }
+
+            // 聞き取りに成功した情報を編集して架電元情報を作成
+            let finalCallerInfo = "";
+            
+            if (detectedCallerName) {
+                finalCallerInfo += detectedCallerName;
+            } else {
+                finalCallerInfo += "名前未確認";
+            }
+            
+            if (detectedCallerPhone) {
+                finalCallerInfo += ` (${detectedCallerPhone})`;
+            } else {
+                finalCallerInfo += " (電話番号未確認)";
+            }
+
+            if (!detectedCallerName && !detectedCallerPhone) {
+                finalCallerInfo = "聞き取り失敗 (匿名発信)";
+            }
+            
+            try {
+                const payload = {
+                    timestamp: new Date().toLocaleString("ja-JP"),
+                    caller: finalCallerInfo
+                };
+
+                // CORS制限を完全にバイパスして確実に記録するために no-cors モードを採用
+                await fetch(webhookUrl, {
+                    method: "POST",
+                    body: JSON.stringify(payload),
+                    mode: "no-cors"
+                });
+                console.log("Auto-logging end dispatched:", finalCallerInfo);
+            } catch (err) {
+                console.warn("Auto-log end error (response omitted):", err);
+            }
+        }
+
+        function startSpeechListening() {
+            if (recognition && !isRecognizing && !isMuted && !isAiSpeaking) {
+                try {
+                    recognition.start();
+                } catch (err) {}
+            }
+        }
+
+        function stopSpeechListening() {
+            if (recognition && isRecognizing) {
+                try {
+                    recognition.stop();
+                } catch (err) {}
+            }
+        }
+
+        function toggleMute() {
+            isMuted = !isMuted;
+            const bg = document.getElementById('micIconBg');
+            const icon = document.getElementById('micIcon');
+            const label = document.getElementById('micStatusLabel');
+
+            if (isMuted) {
+                bg.classList.remove('bg-slate-900', 'hover:bg-slate-855');
+                bg.classList.add('bg-rose-950', 'border-rose-500');
+                icon.classList.remove('text-slate-300');
+                icon.classList.add('text-rose-400');
+                label.textContent = "マイクOFF";
+                stopSpeechListening();
+                showToast("マイクをミュートにしました");
+            } else {
+                bg.classList.remove('bg-rose-950', 'border-rose-500');
+                bg.classList.add('bg-slate-900', 'hover:bg-slate-855');
+                icon.classList.remove('text-rose-400');
+                icon.classList.add('text-slate-300');
+                label.textContent = "マイクON";
+                startSpeechListening();
+                showToast("マイクを有効にしました");
+            }
+        }
+
+        let waveInterval = null;
+        function updateWavebars(active) {
+            if (active) {
+                if (waveInterval) clearInterval(waveInterval);
+                waveInterval = setInterval(() => {
+                    for (let i = 1; i <= 7; i++) {
+                        const h = Math.floor(Math.random() * 26) + 4;
+                        document.getElementById(`wb${i}`).style.height = `${h}px`;
+                    }
+                }, 100);
+            } else {
+                clearInterval(waveInterval);
+                for (let i = 1; i <= 7; i++) {
+                    document.getElementById(`wb${i}`).style.height = `4px`;
+                }
+            }
+        }
+
+        function sendTextMessage() {
+            const input = document.getElementById('textChatInput');
+            const text = input.value.trim();
+            if (text === "") return;
+            
+            input.value = "";
+            handleUserResponse(text);
+        }
+
+        // --- ユーザーの発話/テキスト受信（完全にローカル動作） ---
+        async function handleUserResponse(userText, isSilentTrigger = false) {
+            if (!isSilentTrigger) {
+                appendChatBubble("user", userText);
+                evaluateKeywordsInRealtime(userText);
+            }
+
+            document.getElementById('aiStatusText').textContent = "指令員が応答を考えています...";
+            conversationHistory.push({ role: "user", content: userText });
+
+            isAiSpeaking = true;
+            stopSpeechListening();
+            updateWavebars(false);
+            
+            // 完全にローカルの音声合成・擬似会話ロジックへ
+            setTimeout(() => {
+                simulateOfflineCall(userText);
+            }, 1000);
+        }
+
+        // 発話テキストの中から名前や電話番号を特定・スキャンするリアルタイム検出ロジック
+        function evaluateKeywordsInRealtime(text) {
+            if (text.includes("火事") || text.includes("火災") || text.includes("救急") || text.includes("きゅうきゅう") || text.includes("けが") || text.includes("倒れ")) {
+                spokenKeywords.emergency = true;
+            }
+            if (text.includes("宮崎") || text.includes("橘通") || text.includes("高千穂") || text.includes("丁目") || text.includes("ビル") || text.includes("アパート") || text.includes("昭和荘") || text.includes("公園") || text.includes("住所") || text.includes("場所")) {
+                spokenKeywords.location = true;
+            }
+            if (text.includes("煙") || text.includes("炎") || text.includes("燃え") || text.includes("意識") || text.includes("階段") || text.includes("落ち") || text.includes("倒れて") || text.includes("頭") || text.includes("黒煙")) {
+                spokenKeywords.situation = true;
+            }
+            
+            // 名前の聞き取り判定と架電者名のリアルタイム登録
+            if (text.includes("松浦") || text.includes("まつうら")) {
+                spokenKeywords.identity = true;
+                detectedCallerName = "松浦";
+            } else if (text.includes("田中") || text.includes("たなか")) {
+                spokenKeywords.identity = true;
+                detectedCallerName = "田中";
+            } else if (text.includes("佐藤") || text.includes("さとう")) {
+                spokenKeywords.identity = true;
+                detectedCallerName = "佐藤";
+            } else if (text.includes("鈴木") || text.includes("すずき")) {
+                spokenKeywords.identity = true;
+                detectedCallerName = "鈴木";
+            }
+
+            // 電話番号の聞き取り判定
+            if (text.includes("090") || text.includes("080") || text.includes("070") || text.includes("0985") || text.includes("ぜろきゅうぜろ") || text.includes("ぜろはちぜろ") || text.includes("ぜろきゅうはちご") || text.includes("番号") || text.includes("1234") || text.includes("9876") || text.includes("2233") || text.includes("1111")) {
+                if (activeScenarioTitle.includes("パターンA")) {
+                    detectedCallerPhone = "090-1234-5678";
+                } else if (activeScenarioTitle.includes("パターンB")) {
+                    detectedCallerPhone = "080-9876-5432";
+                } else if (activeScenarioTitle.includes("パターンC")) {
+                    detectedCallerPhone = "0985-11-2233";
+                } else if (activeScenarioTitle.includes("パターンD")) {
+                    detectedCallerPhone = "090-0000-1111";
+                }
+            }
+        }
+
+        // --- ブラウザ標準のローカル音声合成（TTS） ---
+        function fallbackLocalTTS(text) {
+            appendChatBubble("ai", text);
+            conversationHistory.push({ role: "model", content: text });
+            document.getElementById('aiStatusText').textContent = "あなたの発話を待っています...";
+
+            const synth = window.speechSynthesis;
+            if (synth) {
+                synth.cancel();
+                const utter = new SpeechSynthesisUtterance(text);
+                utter.lang = 'ja-JP';
+                utter.rate = 1.05;
+                
+                // 男性または女性に聞こえるようにピッチとボイスを切り替える
+                if (aiVoice === "female") {
+                    utter.pitch = 1.25; // 高めのピッチ（女性風）
+                } else {
+                    utter.pitch = 0.85; // 低めのピッチ（男性風）
+                }
+                
+                const voices = synth.getVoices();
+                let chosenVoice = null;
+                if (aiVoice === "female") {
+                    chosenVoice = voices.find(v => v.lang === 'ja-JP' && (v.name.includes('Haruka') || v.name.includes('Kyoko') || v.name.includes('Google 日本語')));
+                } else {
+                    chosenVoice = voices.find(v => v.lang === 'ja-JP' && (v.name.includes('Otoya') || v.name.includes('Ichiro') || v.name.includes('Male')));
+                }
+                
+                if (chosenVoice) {
+                    utter.voice = chosenVoice;
+                } else {
+                    const defaultJp = voices.find(v => v.lang === 'ja-JP');
+                    if (defaultJp) utter.voice = defaultJp;
+                }
+
+                updateWavebars(true);
+                utter.onend = () => {
+                    updateWavebars(false);
+                    isAiSpeaking = false;
+                    startSpeechListening();
+                };
+                utter.onerror = () => {
+                    updateWavebars(false);
+                    isAiSpeaking = false;
+                    startSpeechListening();
+                };
+
+                synth.speak(utter);
+            } else {
+                isAiSpeaking = false;
+                startSpeechListening();
+            }
+        }
+
+        // --- 【改良：状態管理（State Machine）による、一本道・完全な指定対話フローの構築】 ---
+        function simulateOfflineCall(userText) {
+            let responseText = "";
+
+            // --- 0. 回線発信直後の初期応答 ---
+            if (userText === "（119番通報を発信しました）") {
+                emergencyType = null;
+                currentStepIndex = 0;
+                responseText = "はい 消防119番です火事ですか 救急ですか。";
+                fallbackLocalTTS(responseText);
+                return;
+            }
+
+            // --- 1. 緊急要請タイプの確定（初回の「火事」または「救急」の判定） ---
+            if (emergencyType === null) {
+                if (userText.includes("火事") || userText.includes("かじ") || userText.includes("火災")) {
+                    emergencyType = 'fire';
+                    currentStepIndex = 1;
+                    responseText = "消防車を向かわせる場所を教えてください。";
+                } else {
+                    // デフォルトまたは救急判定
+                    emergencyType = 'ambulance';
+                    currentStepIndex = 1;
+                    responseText = "分かりました。場所はどちらですか？市区町村名から教えてください。";
+                }
+                fallbackLocalTTS(responseText);
+                return;
+            }
+
+            // --- 2-A. 火事（新フロー：14ステップ一問一答）の進行 ---
+            if (emergencyType === 'fire') {
+                if (currentStepIndex === 1) {
+                    currentStepIndex = 2;
+                    responseText = "住所が分かれば住所を教えてください。住所が分からなければ近くにあるお店の名前等を教えてください。";
+                } else if (currentStepIndex === 2) {
+                    currentStepIndex = 3;
+                    responseText = "燃えている建物は 何階建てですか。";
+                } else if (currentStepIndex === 3) {
+                    currentStepIndex = 4;
+                    responseText = "燃えているのは何階のどの部屋か分かりますか";
+                } else if (currentStepIndex === 4) {
+                    currentStepIndex = 5;
+                    responseText = "初期消火 は行ってますか";
+                } else if (currentStepIndex === 5) {
+                    currentStepIndex = 6;
+                    responseText = "火はまだ燃えてますか それとも消えてますか";
+                } else if (currentStepIndex === 6) {
+                    currentStepIndex = 7;
+                    responseText = "建物の中には何人ぐらいの人がいますか";
+                } else if (currentStepIndex === 7) {
+                    currentStepIndex = 8;
+                    responseText = "全員 避難 は完了してますか";
+                } else if (currentStepIndex === 8) {
+                    currentStepIndex = 9;
+                    responseText = "逃げ遅れの人はいませんか";
+                } else if (currentStepIndex === 9) {
+                    currentStepIndex = 10;
+                    responseText = "今分かっている範囲で怪我をしている人はいませんか";
+                } else if (currentStepIndex === 10) {
+                    currentStepIndex = 11;
+                    // ★重要：火事フローで名前と一緒に電話番号も確実に聞くようアレンジ！
+                    responseText = "最後に通報者ということであなたのお名前と、今おかけの電話番号を教えてください";
+                } else if (currentStepIndex === 11) {
+                    currentStepIndex = 12;
+                    responseText = "あなたは燃えている建物とどういう関係の方ですか。通行人ですか。";
+                } else if (currentStepIndex === 12) {
+                    currentStepIndex = 13;
+                    responseText = "分かりました。消防車は、今向かっています。安全な場所に避難してお待ちください。消防車が見えてきたら、手を振って消防車の誘導をお願いします。";
+                } else {
+                    responseText = "消防車が到着するまで安全な場所で避難を続けてください。電話を切ります。";
+                }
+            } 
+            // --- 2-B. 救急（従来フロー：5ステップ一問一答）の進行 ---
+            else if (emergencyType === 'ambulance') {
+                if (currentStepIndex === 1) {
+                    currentStepIndex = 2;
+                    responseText = "場所を確認しました。何があったか、詳しい状況を教えてください。";
+                } else if (currentStepIndex === 2) {
+                    currentStepIndex = 3;
+                    responseText = "状況を把握しました。最後に、あなたのお名前と、今使っているお電話番号を教えてください。";
+                } else if (currentStepIndex === 3) {
+                    currentStepIndex = 4;
+                    responseText = "ありがとうございます。救急隊と消防隊をそちらに向かわせます。安全な場所でお待ちください。それでは失礼します。";
+                } else {
+                    responseText = "救急隊が間もなく到着します。電話を切ります。";
+                }
+            }
+
+            fallbackLocalTTS(responseText);
+        }
+
+        function appendChatBubble(role, text) {
+            const container = document.getElementById('transcriptLog');
+            const placeholder = container.querySelector('.text-center');
+            if (placeholder) {
+                placeholder.remove();
+            }
+
+            const wrapper = document.createElement('div');
+            wrapper.className = "flex w-full mb-3 " + (role === "user" ? "justify-end" : "justify-start");
+
+            const bubble = document.createElement('div');
+            bubble.className = "max-w-[80%] rounded-2xl px-3.5 py-2 text-[11px] leading-relaxed " + 
+                (role === "user" 
+                    ? "bg-blue-600 text-white rounded-tr-none" 
+                    : "bg-slate-800 text-slate-100 rounded-tl-none border border-slate-700/50");
+
+            const title = document.createElement('div');
+            title.className = "text-[9px] font-bold mb-0.5 " + (role === "user" ? "text-blue-200 text-right" : "text-rose-400");
+            title.textContent = role === "user" ? "通報者（あなた）" : "指令員（消防本部）";
+
+            const message = document.createElement('p');
+            message.textContent = text;
+
+            bubble.appendChild(title);
+            bubble.appendChild(message);
+            wrapper.appendChild(bubble);
+            container.appendChild(wrapper);
+
+            const logContainer = document.getElementById('transcriptLogContainer');
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // --- 通話切断 ---
+        function triggerEndCall() {
+            isCalling = false;
+            clearInterval(callTimerInterval);
+            
+            stopSpeechListening();
+            if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+            }
+            updateWavebars(false);
+
+            // 通話が終了した瞬間に、実際に聞き取れた情報をスプレッドシートに記録する
+            logCallEndToSpreadsheet();
+
+            renderEvaluationReport();
+        }
+
+        function renderEvaluationReport() {
+            document.getElementById('callingView').classList.add('hidden');
+            document.getElementById('reportView').classList.remove('hidden');
+
+            const checks = [
+                { id: 'chkEmergencyIcon', status: spokenKeywords.emergency },
+                { id: 'chkLocationIcon', status: spokenKeywords.location },
+                { id: 'chkSituationIcon', status: spokenKeywords.situation },
+                { id: 'chkIdentityIcon', status: spokenKeywords.identity }
+            ];
+
+            let passCount = 0;
+            checks.forEach(chk => {
+                const iconContainer = document.getElementById(chk.id);
+                if (chk.status) {
+                    iconContainer.innerHTML = '<i data-lucide="check-circle-2" class="w-4.5 h-4.5 text-emerald-400 fill-emerald-950"></i>';
+                    passCount++;
+                } else {
+                    iconContainer.innerHTML = '<i data-lucide="alert-circle" class="w-4.5 h-4.5 text-rose-400 fill-rose-950"></i>';
+                }
+            });
+
+            lucide.createIcons();
+
+            let score = passCount * 25;
+            const scoreEl = document.getElementById('evaluationScore');
+            scoreEl.textContent = `${score}点`;
+
+            if (score === 100) {
+                scoreEl.className = "text-3xl font-black text-emerald-400";
+                document.getElementById('evaluationAdvice').textContent = 
+                    "素晴らしい！必要な「救急/火事の区別」「場所」「状況」「名前と連絡先」の全てを落ち着いてハッキリ伝えることができました。実際の通報でもこれ以上にない完璧な対応が期待できます！";
+            } else if (score >= 75) {
+                scoreEl.className = "text-3xl font-black text-blue-400";
+                document.getElementById('evaluationAdvice').textContent = 
+                    "非常に良好です。指令課員の誘導に従って、必要な情報をほとんど正しく伝えることができていました。もし漏れがあった項目を意識してもう一度練習すると完璧です。";
+            } else if (score >= 50) {
+                scoreEl.className = "text-3xl font-black text-amber-400";
+                document.getElementById('evaluationAdvice').textContent = 
+                    "半分以上の項目をクリアできました。通報の際、焦ってしまい自分の状況や連絡先を伝える前に聞き取りを終えてしまった可能性があります。一歩ずつ答える意識を持って再挑戦してみましょう。";
+            } else {
+                scoreEl.className = "text-3xl font-black text-rose-500";
+                document.getElementById('evaluationAdvice').textContent = 
+                    "訓練お疲れ様でした。緊急通報はとても緊張しますね。手引きボタンや、画面に表示されるカンペをよく読みながら、落ち着いて指令員に答える練習を重ねてみましょう。";
+            }
+
+            // 送信状況ステータスの更新
+            const statusEl = document.getElementById('autoLogStatus');
+            if (webhookUrl) {
+                statusEl.textContent = "自動記録対応";
+                statusEl.className = "font-bold text-[11px] text-emerald-400";
+            } else {
+                statusEl.textContent = "URL未設定";
+                statusEl.className = "font-bold text-[11px] text-amber-500";
+            }
+        }
+
+        function backToDialView() {
+            document.getElementById('reportView').classList.add('hidden');
+            document.getElementById('dialView').classList.remove('hidden');
+            currentNumber = "";
+            updateDialDisplay();
+        }
+    </script>
+</body>
+</html>
