@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>01_119番 通報訓練シミュレーター</title>
+    <title>119番 通報訓練シミュレーター</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
@@ -439,6 +439,10 @@
         let emergencyType = null;
         let currentStepIndex = 0;
 
+        // 【ガベージコレクション（GC）対策およびスマートフォン自動再生アンロック用グローバル変数】
+        let globalAudioCtx = null;
+        let activeUtterance = null; // iOSでの音声合成消滅バグ対策として強固に保持する変数
+
         // 判定キーワード用 (訓練レポート用スコアリング)
         let spokenKeywords = {
             emergency: false,
@@ -507,23 +511,31 @@
             }
         }
 
+        // --- 【スマートフォン対応：AudioContextのアンロックと再利用】 ---
         function playTone(freq, duration) {
             try {
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
+                if (!globalAudioCtx) {
+                    globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                // 保留状態であればアクティブにする
+                if (globalAudioCtx.state === 'suspended') {
+                    globalAudioCtx.resume();
+                }
+                
+                const osc = globalAudioCtx.createOscillator();
+                const gain = globalAudioCtx.createGain();
                 
                 osc.type = 'sine';
                 osc.frequency.value = freq;
                 
-                gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                gain.gain.setValueAtTime(0.12, globalAudioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + duration);
                 
                 osc.connect(gain);
-                gain.connect(audioCtx.destination);
+                gain.connect(globalAudioCtx.destination);
                 
                 osc.start();
-                osc.stop(audioCtx.currentTime + duration);
+                osc.stop(globalAudioCtx.currentTime + duration);
             } catch (e) {
                 console.log("AudioContext blocked or unsupported.");
             }
@@ -614,6 +626,19 @@
             if (currentNumber !== "119") {
                 showToast("119番を正しく入力してください");
                 return;
+            }
+
+            // 【最重要：スマートフォン対応：ユーザーインタラクションイベント直下で音声合成と音声効果を完全アンロックする】
+            if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+                const initialUnlockUtterance = new SpeechSynthesisUtterance("");
+                window.speechSynthesis.speak(initialUnlockUtterance);
+            }
+            if (!globalAudioCtx) {
+                globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
+                globalAudioCtx.resume();
             }
 
             playTone(400, 1.2);
@@ -929,7 +954,7 @@
             }
         }
 
-        // --- ブラウザ標準のローカル音声合成（TTS） ---
+        // --- 【スマートフォン対応：ガベージコレクション対策を施した音声合成（TTS）】 ---
         function fallbackLocalTTS(text) {
             appendChatBubble("ai", text);
             conversationHistory.push({ role: "model", content: text });
@@ -937,8 +962,12 @@
 
             const synth = window.speechSynthesis;
             if (synth) {
-                synth.cancel();
+                synth.cancel(); // 進行中の発話をキャンセル
                 const utter = new SpeechSynthesisUtterance(text);
+                
+                // 【最重要：ガベージコレクション（GC）による再生停止バグを防ぐためグローバル変数に参照を保持】
+                activeUtterance = utter;
+
                 utter.lang = 'ja-JP';
                 utter.rate = 1.05;
                 
@@ -965,14 +994,19 @@
                 }
 
                 updateWavebars(true);
+                
                 utter.onend = () => {
                     updateWavebars(false);
                     isAiSpeaking = false;
+                    activeUtterance = null; // 参照解放
                     startSpeechListening();
                 };
-                utter.onerror = () => {
+                
+                utter.onerror = (err) => {
+                    console.error("Speech Synthesis Error:", err);
                     updateWavebars(false);
                     isAiSpeaking = false;
+                    activeUtterance = null; // 参照解放
                     startSpeechListening();
                 };
 
