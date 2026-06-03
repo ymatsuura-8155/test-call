@@ -9,7 +9,7 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght=300;400;500;600;700&family=Noto+Sans+JP:wght=300;400;500;700&display=swap');
         body {
             font-family: 'Plus Jakarta Sans', 'Noto Sans JP', sans-serif;
             background-color: #0b0f19;
@@ -109,8 +109,8 @@
 
                     <div>
                         <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">スプレッドシート連携用 GAS URL</label>
-                        <input id="webhookUrlInput" type="text" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-blue-500 text-white transition-all">
-                        <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">※119番通報の終了時（切断時）に、実際に会話中から聞き取ることに成功した「架電元名（名前・電話番号）」をお手持ちのスプレッドシートに自動送信します。</p>
+                        <input id="webhookUrlInput" type="text" placeholder="https://script.google.com/macros/s/AKfycbxaxhM00mRq8AuNau02-k_TUPYlGkddJnswv3r_gh3gpbHKkdQIkyOG9dyCQAP_0LRfUw/exec" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-blue-500 text-white transition-all">
+                        <p class="text-[10px] text-slate-500 mt-1 leading-relaxed">※119番通報の終了時に、会話中から音声等で聞き取ることに成功した「氏名」と「連絡先」をスプレッドシートに自動で送信します。</p>
                     </div>
 
                     <div>
@@ -698,7 +698,7 @@
                     odaiText = "【救急】子供が自宅の階段から足を踏み外して落ち、頭を打って泣いています。場所は「宮崎市大字宮崎の自宅アパート」。あなたの名前は「佐藤」、固定電話「0985-11-2233」。不安な気持ちで助けを求めてください。";
                 } else if (resolved === "D") {
                     activeScenarioTitle = "パターンD (火事・アパート火災)";
-                    odaiText = "【火事】アパートの2階から黒煙と炎が吹き出しており、自分は外へ非難中。場所は「宮崎駅東3丁目 昭和荘の201号室」。名前は「鈴木」、携帯は「090-0000-1111」です。緊急避難を行いながら答えてください。";
+                    odaiText = "【火事】アパートの2階から黒煙と炎が吹き出しており、自分は外へ避難中。場所は「宮崎駅東3丁目 昭和荘の201号室」。名前は「鈴木」、携帯は「090-0000-1111」です。緊急避難を行いながら答えてください。";
                 }
 
                 document.getElementById('odaiText').textContent = odaiText;
@@ -714,10 +714,10 @@
         async function logCallEndToSpreadsheet() {
             if (!webhookUrl) return;
             
-            // 【最優先処理】会話ログ（お名前確認ターン）から実際の発話内容を直接探して抽出
+            // 【最優先処理】会話ログから実際の発話内容を直接探して抽出
             let identitySpeech = "";
             
-            // 会話履歴を末尾からスキャンし、名前と連絡先（電話）の両方を尋ねている指令員（model）の発言を特定
+            // 会話履歴を末尾からスキャンし、名前と連絡先（電話）の両方を尋ねている指令員のターンを特定
             let targetModelIdx = -1;
             for (let i = conversationHistory.length - 1; i >= 0; i--) {
                 const h = conversationHistory[i];
@@ -767,7 +767,7 @@
                 }
             }
 
-            // 【最終フォールバック】何かしらの要因で一切聞き取れず空だった場合のみお題カンペから補完
+            // 【最終フォールバック】何かしらの要因で一切聞き取れず空だった場合のみお題カンペから補完（固定化を防ぎます）
             if (!detectedCallerName) {
                 const odaiVal = document.getElementById('odaiText').textContent;
                 if (activeScenarioTitle.includes("パターンA") || odaiVal.includes("松浦")) {
@@ -797,39 +797,30 @@
                 }
             }
 
-            // 架電元データを作成
-            let finalCallerInfo = "";
-            if (detectedCallerName) {
-                finalCallerInfo += detectedCallerName;
-            } else {
-                finalCallerInfo += "名前未確認";
-            }
-            
-            if (detectedCallerPhone) {
-                finalCallerInfo += ` (${detectedCallerPhone})`;
-            } else {
-                finalCallerInfo += " (電話番号未確認)";
-            }
-
-            if (!detectedCallerName && !detectedCallerPhone) {
-                finalCallerInfo = "聞き取り失敗 (匿名発信)";
-            }
+            // 会話テキストの全ログ化
+            const formattedTranscript = conversationHistory
+                .map(h => `${h.role === 'user' ? '通報者' : '指令員'}: ${h.content}`)
+                .join('\n');
             
             try {
+                // スプレッドシートの列構造に合わせて、別々のパラメータとして構造化したペイロードを作成
                 const payload = {
                     timestamp: new Date().toLocaleString("ja-JP"),
-                    caller: finalCallerInfo
+                    name: detectedCallerName || "名前未確認",
+                    contact: detectedCallerPhone || "電話番号未確認",
+                    scenario: activeScenarioTitle || "シナリオ未設定",
+                    transcript: formattedTranscript
                 };
 
-                // CORS制限を完全にバイパスして確実に記録するために no-cors モードを採用
+                // CORS制限を完全にバイパスして確実にGASへ記録するために no-cors モードを採用
                 await fetch(webhookUrl, {
                     method: "POST",
                     body: JSON.stringify(payload),
                     mode: "no-cors"
                 });
-                console.log("Auto-logging end dispatched:", finalCallerInfo);
+                console.log("スプレッドシートデータ送信成功:", payload);
             } catch (err) {
-                console.warn("Auto-log end error (response omitted):", err);
+                console.warn("送信に失敗しました (エラー内容):", err);
             }
         }
 
@@ -842,6 +833,7 @@
             }
         }
 
+        // 音声認識を停止
         function stopSpeechListening() {
             if (recognition && isRecognizing) {
                 try {
@@ -1026,7 +1018,7 @@
                     }
                     console.warn("Speech Synthesis Warning:", err.error, err);
 
-                    // 特定のボイスのロード不全によるエラー(language-unavailableなど)が起きた場合、標準システム音に戻して一度だけ再試行
+                    // 特定のボイスのロード不全によるエラーが起きた場合、標準システム音に戻して一度だけ再試行
                     if (!isRetry && (err.error === 'language-unavailable' || err.error === 'voice-unavailable')) {
                         console.log("Retrying speech synthesis with system default voice...");
                         fallbackLocalTTS(text, true);
@@ -1180,7 +1172,7 @@
             }
             updateWavebars(false);
 
-            // 通話が終了した瞬間に、実際に聞き取れた情報をスプレッドシートに記録する
+            // 通話が終了した瞬間に、実際に聞き取れた動的情報をスプレッドシートに送信
             logCallEndToSpreadsheet();
 
             renderEvaluationReport();
