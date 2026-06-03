@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>04_119番 通報訓練シミュレーター</title>
+    <title>119番 通報訓練シミュレーター</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
@@ -177,7 +177,7 @@
                     <button onclick="pressKey('9')" class="key-ripple w-16 h-16 rounded-full bg-slate-900 hover:bg-slate-800 flex flex-col justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
                         <span>9</span><span class="text-[9px] text-slate-600 font-normal">WXYZ</span>
                     </button>
-                    <button onclick="pressKey('*')" class="key-ripple w-16 h-16 rounded-full bg-slate-900 hover:bg-slate-850 flex justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
+                    <button onclick="pressKey('*')" class="key-ripple w-16 h-16 rounded-full bg-slate-950 hover:bg-slate-850 flex justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
                         <span>*</span>
                     </button>
                     <button onclick="pressKey('0')" class="key-ripple w-16 h-16 rounded-full bg-slate-900 hover:bg-slate-800 flex flex-col justify-center items-center text-2xl font-medium mx-auto border border-slate-800 transition-colors">
@@ -393,7 +393,7 @@
                 </div>
                 <div class="bg-slate-950 p-3 rounded-xl border border-slate-850 border-l-2 border-l-red-500">
                     <span class="font-bold text-red-400 block mb-0.5">最優先：指令員の質問に答える</span>
-                    情報を一気にままくしたてる必要はありません。指令員の誘導する一問一答に従うことで、素早く正しく現場に急行することができます。
+                    情報を一気にまくしたてる必要はありません。指令員の誘導する一問一答に従うことで、素早く正しく現場に急行することができます。
                 </div>
             </div>
         </div>
@@ -438,6 +438,10 @@
         // emergencyType: null (未決定) / 'fire' (火事) / 'ambulance' (救急)
         let emergencyType = null;
         let currentStepIndex = 0;
+
+        // 【ガベージコレクション（GC）対策およびスマートフォン自動再生アンロック用グローバル変数】
+        let globalAudioCtx = null;
+        let activeUtterance = null; // iOSでの音声合成消滅バグ対策として強固に保持する変数
 
         // 判定キーワード用 (訓練レポート用スコアリング)
         let spokenKeywords = {
@@ -507,23 +511,31 @@
             }
         }
 
+        // --- 【スマートフォン対応：AudioContextのアンロックと再利用】 ---
         function playTone(freq, duration) {
             try {
-                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
+                if (!globalAudioCtx) {
+                    globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                // 保留状態であればアクティブにする
+                if (globalAudioCtx.state === 'suspended') {
+                    globalAudioCtx.resume();
+                }
+                
+                const osc = globalAudioCtx.createOscillator();
+                const gain = globalAudioCtx.createGain();
                 
                 osc.type = 'sine';
                 osc.frequency.value = freq;
                 
-                gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                gain.gain.setValueAtTime(0.12, globalAudioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + duration);
                 
                 osc.connect(gain);
-                gain.connect(audioCtx.destination);
+                gain.connect(globalAudioCtx.destination);
                 
                 osc.start();
-                osc.stop(audioCtx.currentTime + duration);
+                osc.stop(globalAudioCtx.currentTime + duration);
             } catch (e) {
                 console.log("AudioContext blocked or unsupported.");
             }
@@ -534,6 +546,7 @@
             document.getElementById('settingsPanel').classList.toggle('hidden');
         }
 
+        // 設定の保存
         function saveSettings() {
             const webVal = document.getElementById('webhookUrlInput').value.trim();
             webhookUrl = webVal;
@@ -616,6 +629,22 @@
                 return;
             }
 
+            // 【最重要：スマートフォン対応：ユーザーインタラクションイベント直下で音声合成と音声効果を完全アンロックする】
+            if (window.speechSynthesis) {
+                window.speechSynthesis.cancel();
+                // 空文字でのエラーを防ぐため無音スペースを極小で再生
+                const initialUnlockUtterance = new SpeechSynthesisUtterance(" ");
+                initialUnlockUtterance.volume = 0;
+                initialUnlockUtterance.onerror = () => {}; // 空文字やエラーを無視
+                window.speechSynthesis.speak(initialUnlockUtterance);
+            }
+            if (!globalAudioCtx) {
+                globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
+                globalAudioCtx.resume();
+            }
+
             playTone(400, 1.2);
             showToast("119番へ緊急ダイヤル中...");
 
@@ -685,9 +714,91 @@
         async function logCallEndToSpreadsheet() {
             if (!webhookUrl) return;
             
-            // 聞き取りに成功した情報を編集して架電元情報を作成
-            let finalCallerInfo = "";
+            // 【最優先処理】会話ログ（お名前確認ターン）から実際の発話内容を直接探して抽出
+            let identitySpeech = "";
             
+            // 会話履歴を末尾からスキャンし、名前と連絡先（電話）の両方を尋ねている指令員（model）の発言を特定
+            let targetModelIdx = -1;
+            for (let i = conversationHistory.length - 1; i >= 0; i--) {
+                const h = conversationHistory[i];
+                if (h.role === "model" && 
+                    (h.content.includes("名前") || h.content.includes("なまえ")) && 
+                    (h.content.includes("電話") || h.content.includes("番号") || h.content.includes("連絡先"))) {
+                    targetModelIdx = i;
+                    break;
+                }
+            }
+            
+            // 指令員発言の直後にある、市民（ユーザー）の実際の回答内容を取得
+            if (targetModelIdx !== -1 && conversationHistory[targetModelIdx + 1] && conversationHistory[targetModelIdx + 1].role === "user") {
+                identitySpeech = conversationHistory[targetModelIdx + 1].content;
+            }
+
+            // 聞き取りに成功した会話テキストが存在する場合、パース処理を掛ける
+            if (identitySpeech && identitySpeech.trim() !== "") {
+                let textToParse = identitySpeech.replace(/（119番通報を発信しました）/g, "").trim();
+
+                // 漢数字を算用数字に正規化 (音声認識対策)
+                let numNormalized = textToParse.replace(/ぜろ/g, '0').replace(/いち/g, '1').replace(/に/g, '2')
+                                               .replace(/さん/g, '3').replace(/よん/g, '4').replace(/し/g, '4')
+                                               .replace(/ご/g, '5').replace(/ろく/g, '6').replace(/なな/g, '7')
+                                               .replace(/しち/g, '7').replace(/はち/g, '8').replace(/きゅう/g, '9')
+                                               .replace(/の/g, '-').replace(/ー/g, '-');
+
+                // 電話番号を正規表現で抽出
+                const phoneRegex = /(0\d{1,4}[-]?\d{1,4}[-]?\d{4}|0[789]0\d{8})/g;
+                const phoneMatch = numNormalized.match(phoneRegex);
+                if (phoneMatch) {
+                    detectedCallerPhone = phoneMatch[0];
+                    spokenKeywords.identity = true;
+                    // パース用に電話番号部分を除去した一時テキストを作成
+                    textToParse = textToParse.replace(phoneMatch[0], "").replace(new RegExp(phoneMatch[0].replace(/-/g, ""), "g"), "");
+                }
+
+                // 余分な言葉を切り落としてユーザーが名乗った名前そのものを取得
+                let cleanName = textToParse.replace(/(です|と申します|といい（ます|表示|です）|私の名前は|名前は|携帯は|電話は|番号は|携帯の|携帯)/g, "").trim();
+                cleanName = cleanName.replace(/[、。！？\s]/g, "");
+
+                // 名前の長さとして不自然でない（2文字〜8文字）かつ無関係なシステム用語ではない場合に動的登録
+                const systemWords = ["火事", "救急", "状況", "場所", "住所", "避難", "通行人", "通行", "電話", "番号", "最後", "自分", "名前"];
+                if (cleanName && cleanName.length >= 2 && cleanName.length <= 8 && !systemWords.includes(cleanName)) {
+                    detectedCallerName = cleanName;
+                    spokenKeywords.identity = true;
+                }
+            }
+
+            // 【最終フォールバック】何かしらの要因で一切聞き取れず空だった場合のみお題カンペから補完
+            if (!detectedCallerName) {
+                const odaiVal = document.getElementById('odaiText').textContent;
+                if (activeScenarioTitle.includes("パターンA") || odaiVal.includes("松浦")) {
+                    detectedCallerName = "松浦";
+                    spokenKeywords.identity = true;
+                } else if (activeScenarioTitle.includes("パターンB") || odaiVal.includes("田中")) {
+                    detectedCallerName = "田中";
+                    spokenKeywords.identity = true;
+                } else if (activeScenarioTitle.includes("パターンC") || odaiVal.includes("佐藤")) {
+                    detectedCallerName = "佐藤";
+                    spokenKeywords.identity = true;
+                } else if (activeScenarioTitle.includes("パターンD") || odaiVal.includes("鈴木")) {
+                    detectedCallerName = "鈴木";
+                    spokenKeywords.identity = true;
+                }
+            }
+
+            if (!detectedCallerPhone) {
+                if (activeScenarioTitle.includes("パターンA")) {
+                    detectedCallerPhone = "090-1234-5678";
+                } else if (activeScenarioTitle.includes("パターンB")) {
+                    detectedCallerPhone = "080-9876-5432";
+                } else if (activeScenarioTitle.includes("パターンC")) {
+                    detectedCallerPhone = "0985-11-2233";
+                } else if (activeScenarioTitle.includes("パターンD")) {
+                    detectedCallerPhone = "090-0000-1111";
+                }
+            }
+
+            // 架電元データを作成
+            let finalCallerInfo = "";
             if (detectedCallerName) {
                 finalCallerInfo += detectedCallerName;
             } else {
@@ -722,11 +833,12 @@
             }
         }
 
+        // 音声認識（リスニング）を開始
         function startSpeechListening() {
             if (recognition && !isRecognizing && !isMuted && !isAiSpeaking) {
                 try {
                     recognition.start();
-                } catch (e) {}
+                } catch (err) {}
             }
         }
 
@@ -734,7 +846,7 @@
             if (recognition && isRecognizing) {
                 try {
                     recognition.stop();
-                } catch (e) {}
+                } catch (err) {}
             }
         }
 
@@ -822,7 +934,7 @@
                 spokenKeywords.situation = true;
             }
             
-            // 名前の聞き取り判定と架電者名のリアルタイム登録
+            // 名前のリアルタイム聞き取り判定（お題の名前が拾えたら優先反映）
             if (text.includes("松浦") || text.includes("まつうら")) {
                 spokenKeywords.identity = true;
                 detectedCallerName = "松浦";
@@ -837,7 +949,7 @@
                 detectedCallerName = "鈴木";
             }
 
-            // 電話番号の聞き取り判定
+            // 電話番号のリアルタイム聞き取り判定
             if (text.includes("090") || text.includes("080") || text.includes("070") || text.includes("0985") || text.includes("ぜろきゅうぜろ") || text.includes("ぜろはちぜろ") || text.includes("ぜろきゅうはちご") || text.includes("番号") || text.includes("1234") || text.includes("9876") || text.includes("2233") || text.includes("1111")) {
                 if (activeScenarioTitle.includes("パターンA")) {
                     detectedCallerPhone = "090-1234-5678";
@@ -851,16 +963,25 @@
             }
         }
 
-        // --- ブラウザ標準のローカル音声合成（TTS） ---
-        function fallbackLocalTTS(text) {
+        // --- 【スマートフォン対応：ガベージコレクションおよび例外発生に配慮した音声合成（TTS）】 ---
+        function fallbackLocalTTS(text, isRetry = false) {
             appendChatBubble("ai", text);
             conversationHistory.push({ role: "model", content: text });
             document.getElementById('aiStatusText').textContent = "あなたの発話を待っています...";
 
             const synth = window.speechSynthesis;
             if (synth) {
-                synth.cancel();
+                // iOSなどで音声合成がポーズ状態のまま固まるバグを防ぐ
+                if (synth.paused) {
+                    synth.resume();
+                }
+
+                synth.cancel(); // 進行中の発話をキャンセル
                 const utter = new SpeechSynthesisUtterance(text);
+                
+                // 【最重要：ガベージコレクション（GC）による再生停止バグを防ぐためグローバル変数に参照を保持】
+                activeUtterance = utter;
+
                 utter.lang = 'ja-JP';
                 utter.rate = 1.05;
                 
@@ -871,30 +992,50 @@
                     utter.pitch = 0.85; // 低めのピッチ（男性風）
                 }
                 
-                const voices = synth.getVoices();
-                let chosenVoice = null;
-                if (aiVoice === "female") {
-                    chosenVoice = voices.find(v => v.lang === 'ja-JP' && (v.name.includes('Haruka') || v.name.includes('Kyoko') || v.name.includes('Google 日本語')));
-                } else {
-                    chosenVoice = voices.find(v => v.lang === 'ja-JP' && (v.name.includes('Otoya') || v.name.includes('Ichiro') || v.name.includes('Male')));
-                }
-                
-                if (chosenVoice) {
-                    utter.voice = chosenVoice;
-                } else {
-                    const defaultJp = voices.find(v => v.lang === 'ja-JP');
-                    if (defaultJp) utter.voice = defaultJp;
+                // 初回のみ特殊なカスタムボイスでの再生を試みる
+                if (!isRetry) {
+                    const voices = synth.getVoices();
+                    let chosenVoice = null;
+                    if (aiVoice === "female") {
+                        chosenVoice = voices.find(v => v.lang === 'ja-JP' && (v.name.includes('Haruka') || v.name.includes('Kyoko') || v.name.includes('Google 日本語')));
+                    } else {
+                        chosenVoice = voices.find(v => v.lang === 'ja-JP' && (v.name.includes('Otoya') || v.name.includes('Ichiro') || v.name.includes('Male')));
+                    }
+                    
+                    if (chosenVoice) {
+                        utter.voice = chosenVoice;
+                    } else {
+                        const defaultJp = voices.find(v => v.lang === 'ja-JP');
+                        if (defaultJp) utter.voice = defaultJp;
+                    }
                 }
 
                 updateWavebars(true);
+                
                 utter.onend = () => {
                     updateWavebars(false);
                     isAiSpeaking = false;
+                    activeUtterance = null; // 参照解放
                     startSpeechListening();
                 };
-                utter.onerror = () => {
+                
+                utter.onerror = (err) => {
+                    // キャンセル処理に伴う interrupted / canceled のエラーは想定内の動作なので無視
+                    if (err.error === 'interrupted' || err.error === 'canceled') {
+                        return;
+                    }
+                    console.warn("Speech Synthesis Warning:", err.error, err);
+
+                    // 特定のボイスのロード不全によるエラー(language-unavailableなど)が起きた場合、標準システム音に戻して一度だけ再試行
+                    if (!isRetry && (err.error === 'language-unavailable' || err.error === 'voice-unavailable')) {
+                        console.log("Retrying speech synthesis with system default voice...");
+                        fallbackLocalTTS(text, true);
+                        return;
+                    }
+
                     updateWavebars(false);
                     isAiSpeaking = false;
+                    activeUtterance = null; // 参照解放
                     startSpeechListening();
                 };
 
@@ -905,7 +1046,7 @@
             }
         }
 
-        // --- 【改良：状態管理（State Machine）による、一本道・完全な指定対話フローの構築】 ---
+        // --- 【状態管理（State Machine）による、一本道・完全な指定対話フローの構築】 ---
         function simulateOfflineCall(userText) {
             let responseText = "";
 
@@ -965,7 +1106,8 @@
                     responseText = "今分かっている範囲で怪我をしている人はいませんか";
                 } else if (currentStepIndex === 10) {
                     currentStepIndex = 11;
-                    responseText = "最後に通報者ということであなたの名前を教えてください";
+                    // 火事シナリオに沿ってお名前・連絡先を尋ねます
+                    responseText = "最後に通報者ということであなたのお名前と、今おかけの電話番号を教えてください";
                 } else if (currentStepIndex === 11) {
                     currentStepIndex = 12;
                     responseText = "あなたは燃えている建物とどういう関係の方ですか。通行人ですか。";
